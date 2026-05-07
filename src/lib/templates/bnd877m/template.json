@@ -1,0 +1,72 @@
+{
+  "id": "bnd877m",
+  "slug": "bnd877m",
+  "name": "HOOKIPA M - 2 in 1 Bottle & Tumbler",
+  "category": "Drinkware",
+  "description": "The Hookipa BND877M combines a 500ml / 17oz bottle and 370ml / 13oz tumbler in one compact design, each with its own lid. Made from recycled stainless steel and ABS, it's durable, rust-resistant, and built for daily use.",
+  "size": "21(H) x 8(dia)cm",
+  "specifications": [],
+  "assetFolderPublicPath": "/mockup-templates/bnd877m",
+  "baseImageFileName": "base-product-1777882438676.jpg",
+  "instructionImageFileName": "instruction-image-1777882438757.jpg",
+  "usageType": "visual_reference_only",
+  "allowedLogoPrintColors": [
+    "white",
+    "black",
+    "original",
+    "pantone_match"
+  ],
+  "defaultLogoPrintColor": "white",
+  "allowedPrintingMethods": [
+    "silk_screen",
+    "uv_print",
+    "heat_transfer",
+    "embroidery",
+    "laser_engraving"
+  ],
+  "pantoneLibrary": "pantone-solid-coated-v3",
+  "colorParts": [
+    {
+      "id": "part-1-u2ngql",
+      "label": "Part 1",
+      "description": "Bottom bottle body",
+      "instructionCue": "Blue lower bottle region",
+      "instructionColorHex": "#1450FF",
+      "defaultPantoneCode": "Pantone Black C"
+    },
+    {
+      "id": "part-2-7dlmn0",
+      "label": "Part 2",
+      "description": "Top bottle lid and upper body",
+      "instructionCue": "Red upper bottle region",
+      "instructionColorHex": "#FF1A0A",
+      "defaultPantoneCode": "Pantone Black C"
+    },
+    {
+      "id": "part-3-5nhyaf",
+      "label": "Part 3",
+      "description": "Handle loop",
+      "instructionCue": "Orange handle loop region",
+      "instructionColorHex": "#FF9800",
+      "defaultPantoneCode": "Pantone Black C"
+    }
+  ],
+  "logoPlacement": {
+    "description": "Place the logo only inside the marked safe area from the instruction image.",
+    "maxWidthMm": 120,
+    "maxHeightMm": 45,
+    "notes": "Visual reference only; final artwork must be confirmed by Chili design team."
+  },
+  "constraints": {
+    "preserveBackground": true,
+    "preserveLighting": true,
+    "preserveProductShape": true,
+    "preserveMaterialTexture": true,
+    "allowOnlyDefinedRecolorRegion": true,
+    "allowOnlyDefinedLogoRegion": true,
+    "noPeople": true,
+    "noExtraProps": true,
+    "noExtraBranding": true,
+    "noExtraTextExceptLogo": true
+  }
+}

@@ -1,0 +1,81 @@
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { AppError } from "@/lib/errors";
+import {
+  listTemplateSlugs,
+  listTemplateSummaries,
+  loadTemplate,
+  toTemplatePublicDto
+} from "@/lib/services/template.service";
+
+describe("template.service", () => {
+  it("resolves absolute backend paths and public frontend URLs", async () => {
+    const template = await loadTemplate("umbrella-classic-black");
+
+    expect(template.baseProductImagePath).toBe(
+      path.resolve(
+        process.cwd(),
+        "public",
+        "mockup-templates",
+        "umbrella-classic-black",
+        "base-product.png"
+      )
+    );
+    expect(template.instructionImagePath).toBe(
+      path.resolve(
+        process.cwd(),
+        "public",
+        "mockup-templates",
+        "umbrella-classic-black",
+        "instruction-image.jpg"
+      )
+    );
+
+    const dto = toTemplatePublicDto(template);
+    expect(dto.baseImageUrl).toBe(
+      "/mockup-templates/umbrella-classic-black/base-product.png"
+    );
+    expect(dto.pantoneOptions).toHaveLength(1846);
+    expect(dto.colorParts).toEqual([
+      {
+        id: "canopy",
+        label: "Part 1",
+        description: "Main umbrella canopy area highlighted for recoloring in the instruction image.",
+        instructionCue: "Blue umbrella canopy region",
+        instructionColorHex: "#1450FF",
+        defaultPantoneCode: "Pantone Black C"
+      }
+    ]);
+    expect(dto.pantoneOptions).toContainEqual({
+      code: "Pantone 485 C",
+      label: "Pantone 485 C",
+      previewHex: "#E0241D"
+    });
+    expect(dto).not.toHaveProperty("baseProductImagePath");
+  });
+
+  it("throws PRODUCT_TEMPLATE_NOT_FOUND for unknown slugs", async () => {
+    await expect(loadTemplate("unknown-product")).rejects.toMatchObject({
+      errorCode: "PRODUCT_TEMPLATE_NOT_FOUND"
+    } satisfies Partial<AppError>);
+  });
+
+  it("discovers available product slugs from the templates directory", async () => {
+    await expect(listTemplateSlugs()).resolves.toContain("umbrella-classic-black");
+  });
+
+  it("returns template summaries for product browsing", async () => {
+    const summaries = await listTemplateSummaries();
+
+    expect(summaries).toContainEqual({
+      id: "umbrella-classic-black",
+      slug: "umbrella-classic-black",
+      name: "Classic Umbrella",
+      category: "umbrella",
+      description: "Classic umbrella mockup generator using the real product photo and instruction guide.",
+      size: "Standard full-size canopy",
+      baseImageUrl: "/mockup-templates/umbrella-classic-black/base-product.png",
+      instructionImageUrl: "/mockup-templates/umbrella-classic-black/instruction-image.jpg"
+    });
+  });
+});

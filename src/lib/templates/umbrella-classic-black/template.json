@@ -1,0 +1,54 @@
+{
+  "id": "umbrella-classic-black",
+  "slug": "umbrella-classic-black",
+  "name": "Classic Umbrella",
+  "category": "umbrella",
+  "description": "Classic umbrella mockup generator using the real product photo and instruction guide.",
+  "size": "Standard full-size canopy",
+  "specifications": [
+    { "label": "Handle", "value": "Wood-look straight grip" },
+    { "label": "Shaft", "value": "Single center pole" }
+  ],
+  "assetFolderPublicPath": "/mockup-templates/umbrella-classic-black",
+  "baseImageFileName": "base-product.png",
+  "instructionImageFileName": "instruction-image.jpg",
+  "usageType": "visual_reference_only",
+  "allowedLogoPrintColors": ["white", "black", "original", "pantone_match"],
+  "defaultLogoPrintColor": "white",
+  "allowedPrintingMethods": [
+    "silk_screen",
+    "uv_print",
+    "heat_transfer",
+    "embroidery",
+    "laser_engraving"
+  ],
+  "pantoneLibrary": "pantone-solid-coated-v3",
+  "colorParts": [
+    {
+      "id": "canopy",
+      "label": "Part 1",
+      "description": "Main umbrella canopy area highlighted for recoloring in the instruction image.",
+      "instructionCue": "Blue umbrella canopy region",
+      "instructionColorHex": "#1450FF",
+      "defaultPantoneCode": "Pantone Black C"
+    }
+  ],
+  "logoPlacement": {
+    "description": "Place the logo within the green rectangle area shown in the instruction image.",
+    "maxWidthMm": 120,
+    "maxHeightMm": 45,
+    "notes": "Visual reference only; final artwork must be confirmed by Chili design team."
+  },
+  "constraints": {
+    "preserveBackground": true,
+    "preserveLighting": true,
+    "preserveProductShape": true,
+    "preserveMaterialTexture": true,
+    "allowOnlyDefinedRecolorRegion": true,
+    "allowOnlyDefinedLogoRegion": true,
+    "noPeople": true,
+    "noExtraProps": true,
+    "noExtraBranding": true,
+    "noExtraTextExceptLogo": true
+  }
+}

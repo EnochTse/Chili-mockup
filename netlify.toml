@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build:netlify"
+  publish = "out"
+
+[build.environment]
+  NEXT_TELEMETRY_DISABLED = "1"
+  NODE_VERSION = "22"
+  NEXT_OUTPUT_EXPORT = "true"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  included_files = [
+    "public/mockup-templates/**",
+    "src/lib/pantone/**",
+    "src/lib/templates/**"
+  ]

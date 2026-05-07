@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+tmp/
+public/generated/
+.env*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dev-server.log
+docx-v*-extracted.txt
+tsconfig.tsbuildinfo
+.git-upload-preview.txt
