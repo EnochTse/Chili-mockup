@@ -60,6 +60,8 @@ const maxPreviewRetryCount = 6;
 const fallbackLogoArea = { x: 0.34, y: 0.58, width: 0.32, height: 0.11 };
 const defaultLogoTransform = { offsetX: 0, offsetY: 0, scale: 1, rotation: 0 };
 const logoOffsetLimit = 0.35;
+const localNextApiGenerateEndpoint = "/api/mockup/generate";
+const netlifyFunctionGenerateEndpoint = "/.netlify/functions/generate-mockup";
 
 type PixelRect = {
   x: number;
@@ -91,13 +93,21 @@ type LogoDragState = {
 };
 
 function getGenerateEndpoint() {
-  if (process.env.NEXT_PUBLIC_GENERATE_ENDPOINT) {
-    return process.env.NEXT_PUBLIC_GENERATE_ENDPOINT;
+  const configuredEndpoint = process.env.NEXT_PUBLIC_GENERATE_ENDPOINT?.trim();
+  if (configuredEndpoint) {
+    if (
+      process.env.NODE_ENV !== "development" &&
+      configuredEndpoint.startsWith("/api/")
+    ) {
+      return netlifyFunctionGenerateEndpoint;
+    }
+
+    return configuredEndpoint;
   }
 
   return process.env.NODE_ENV === "development"
-    ? "/api/mockup/generate"
-    : "/.netlify/functions/generate-mockup";
+    ? localNextApiGenerateEndpoint
+    : netlifyFunctionGenerateEndpoint;
 }
 
 function buildPreviewImageUrl(imageUrl: string, attempt: number) {
@@ -121,7 +131,27 @@ async function fetchJsonWithTimeout<T>(
       signal: abortController.signal
     });
     const text = await response.text();
-    const data = text ? (JSON.parse(text) as T) : ({} as T);
+    const requestTarget =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : "request";
+    let data = {} as T;
+
+    if (text) {
+      try {
+        data = JSON.parse(text) as T;
+      } catch {
+        const compactText = text.trim().replace(/\s+/g, " ").slice(0, 160);
+        const contentType = response.headers.get("content-type") || "unknown";
+        throw new Error(
+          compactText.startsWith("<")
+            ? `NON_JSON_RESPONSE: ${requestTarget} returned HTML instead of JSON (HTTP ${response.status}, content-type ${contentType}). This usually means the app hit the wrong Netlify endpoint.`
+            : `INVALID_JSON_RESPONSE: ${requestTarget} returned non-JSON content (HTTP ${response.status}, content-type ${contentType}). ${compactText}`
+        );
+      }
+    }
 
     return { response, data };
   } finally {
