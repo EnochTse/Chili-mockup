@@ -28,6 +28,11 @@ export const printingMethodPrompts: Record<
     label: "Laser engraving",
     prompt:
       "Render the logo as a subtle monochrome engraved mark etched into the material surface."
+  },
+  mirror_laser_engraving: {
+    label: "Mirror laser engraving",
+    prompt:
+      "Render the logo as a polished mirror-finish laser engraving with a reflective black-to-white metallic gradient, crisp etched edges, and realistic chrome-like highlights that stay engraved in the material rather than printed on top."
   }
 };
 

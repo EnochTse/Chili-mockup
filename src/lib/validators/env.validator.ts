@@ -31,7 +31,7 @@ export function getGeminiControlRequestTimeoutMs() {
 export function getGeminiBatchPollIntervalMs() {
   const parsed = Number.parseInt(process.env.GEMINI_BATCH_POLL_INTERVAL_MS || "", 10);
   if (Number.isFinite(parsed) && parsed >= 1000) return parsed;
-  return 5000;
+  return 3000;
 }
 
 export function getGeminiBatchMaxWaitMs() {

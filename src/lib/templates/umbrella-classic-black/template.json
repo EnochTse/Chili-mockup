@@ -20,7 +20,8 @@
     "uv_print",
     "heat_transfer",
     "embroidery",
-    "laser_engraving"
+    "laser_engraving",
+    "mirror_laser_engraving"
   ],
   "pantoneLibrary": "pantone-solid-coated-v3",
   "colorParts": [

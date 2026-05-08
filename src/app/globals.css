@@ -713,6 +713,13 @@ input[type="file"].input-shell::file-selector-button {
   gap: var(--spacing-8);
 }
 
+.quick-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-8);
+  margin-top: var(--spacing-8);
+}
+
 .quick-color-button {
   display: inline-flex;
   align-items: center;
@@ -729,6 +736,25 @@ input[type="file"].input-shell::file-selector-button {
 
 .quick-color-button.is-active,
 .quick-color-button:hover {
+  background: var(--color-powder);
+}
+
+.quick-choice-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  box-shadow: var(--shadow-button);
+  color: var(--color-obsidian);
+  cursor: pointer;
+  padding: 0 var(--spacing-12);
+}
+
+.quick-choice-button.is-active,
+.quick-choice-button:hover {
   background: var(--color-powder);
 }
 
@@ -980,6 +1006,13 @@ input[type="file"].input-shell::file-selector-button {
   gap: var(--spacing-16);
 }
 
+.logo-adjust-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-8);
+}
+
 .logo-adjust-title {
   margin: 0;
   color: var(--color-obsidian);
@@ -989,6 +1022,28 @@ input[type="file"].input-shell::file-selector-button {
 
 .logo-reset-button {
   flex: 0 0 auto;
+}
+
+.icon-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: var(--shadow-button);
+  color: var(--color-obsidian);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.icon-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .logo-adjust-grid {
@@ -1017,6 +1072,17 @@ input[type="file"].input-shell::file-selector-button {
   color: var(--color-gravel);
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.logo-rotation-readout {
+  grid-template-columns: 72px minmax(0, 1fr) 56px;
+}
+
+.rotation-readout-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #d4d4d8 0%, #f4f4f5 50%, #d4d4d8 100%);
 }
 
 .debug-panel {

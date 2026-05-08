@@ -15,7 +15,8 @@ const defaultPrintingMethods = [
   "uv_print",
   "heat_transfer",
   "embroidery",
-  "laser_engraving"
+  "laser_engraving",
+  "mirror_laser_engraving"
 ];
 
 function normalizePartId(value: string, index: number) {

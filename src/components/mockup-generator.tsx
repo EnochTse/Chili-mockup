@@ -51,9 +51,8 @@ const logoPrintColorLabels: Record<string, string> = {
   pantone_match: "Match selected Pantone"
 };
 
-const generateFetchTimeoutMs = 210000;
 const jobStatusFetchTimeoutMs = 30000;
-const localJobPollIntervalMs = 5000;
+const localJobPollIntervalMs = 3000;
 const localJobMaxWaitMs = 15 * 60 * 1000;
 const maxClientLogoSizeBytes = 4 * 1024 * 1024;
 const maxPreviewRetryCount = 6;
@@ -62,6 +61,7 @@ const defaultLogoTransform = { offsetX: 0, offsetY: 0, scale: 1, rotation: 0 };
 const logoOffsetLimit = 0.35;
 const localNextApiGenerateEndpoint = "/api/mockup/generate";
 const netlifyFunctionGenerateEndpoint = "/.netlify/functions/generate-mockup";
+const logoQuarterTurnDegrees = 90;
 type GenerateRequestMode = "local-next-api" | "netlify-job";
 
 type PixelRect = {
@@ -198,11 +198,15 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function normalizeLogoTransform(transform: LogoTransform): LogoTransform {
+  const normalizedRotation = Number.isFinite(transform.rotation)
+    ? ((transform.rotation % 360) + 360) % 360
+    : 0;
+
   return {
     offsetX: clamp(transform.offsetX, -logoOffsetLimit, logoOffsetLimit),
     offsetY: clamp(transform.offsetY, -logoOffsetLimit, logoOffsetLimit),
     scale: clamp(transform.scale, 0.35, 2.2),
-    rotation: clamp(transform.rotation, -45, 45)
+    rotation: normalizedRotation
   };
 }
 
@@ -426,6 +430,7 @@ function resolveLogoInkColor(params: {
 }) {
   if (params.logoPrintColor === "original") return null;
   if (params.printingMethod === "laser_engraving") return hexToRgb("#302c27");
+  if (params.printingMethod === "mirror_laser_engraving") return hexToRgb("#8f8f95");
   if (params.logoPrintColor === "white") return hexToRgb("#ffffff");
   if (params.logoPrintColor === "black") return hexToRgb("#050505");
 
@@ -470,6 +475,46 @@ function makeLogoEffectCanvas(logoCanvas: HTMLCanvasElement, printingMethod: str
     context.restore();
   }
 
+  if (printingMethod === "mirror_laser_engraving") {
+    context.save();
+    context.globalCompositeOperation = "source-atop";
+    const metallicGradient = context.createLinearGradient(0, 0, logoCanvas.width, logoCanvas.height);
+    metallicGradient.addColorStop(0, "#080808");
+    metallicGradient.addColorStop(0.16, "#5f5f66");
+    metallicGradient.addColorStop(0.34, "#f4f4f6");
+    metallicGradient.addColorStop(0.5, "#8a8a90");
+    metallicGradient.addColorStop(0.68, "#fdfdff");
+    metallicGradient.addColorStop(0.84, "#4d4d53");
+    metallicGradient.addColorStop(1, "#050505");
+    context.fillStyle = metallicGradient;
+    context.fillRect(0, 0, logoCanvas.width, logoCanvas.height);
+    context.restore();
+
+    context.save();
+    context.globalCompositeOperation = "source-atop";
+    context.globalAlpha = 0.26;
+    const shineWidth = Math.max(6, Math.round(logoCanvas.width * 0.16));
+    const shineGradient = context.createLinearGradient(
+      logoCanvas.width * 0.15,
+      0,
+      logoCanvas.width * 0.15 + shineWidth,
+      0
+    );
+    shineGradient.addColorStop(0, "rgba(255,255,255,0)");
+    shineGradient.addColorStop(0.5, "rgba(255,255,255,1)");
+    shineGradient.addColorStop(1, "rgba(255,255,255,0)");
+    context.translate(logoCanvas.width * 0.08, 0);
+    context.rotate((-18 * Math.PI) / 180);
+    context.fillStyle = shineGradient;
+    context.fillRect(
+      0,
+      -logoCanvas.height * 0.15,
+      logoCanvas.width,
+      logoCanvas.height * 1.35
+    );
+    context.restore();
+  }
+
   return effectCanvas;
 }
 
@@ -502,6 +547,11 @@ function drawLogoWithPrintEffect(params: {
   } else if (printingMethod === "laser_engraving") {
     context.globalAlpha = 0.58;
     context.globalCompositeOperation = "multiply";
+  } else if (printingMethod === "mirror_laser_engraving") {
+    context.globalAlpha = 0.82;
+    context.shadowColor = "rgba(255,255,255,0.18)";
+    context.shadowBlur = 2;
+    context.shadowOffsetY = -1;
   } else {
     context.globalAlpha = 0.97;
   }
@@ -585,6 +635,16 @@ function humanizeOption(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function downloadImageUrl(imageUrl: string, fileName: string) {
+  const link = document.createElement("a");
+  link.href = imageUrl;
+  link.download = fileName;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 function DebugRow({ label, value }: { label: string; value: unknown }) {
@@ -730,7 +790,7 @@ export default function MockupGenerator({
     let isCancelled = false;
 
     if (!previewImageUrl || !logoFile || !template) {
-      setCompositedPreviewUrl(null);
+      setIsPreviewResolving(false);
       return;
     }
 
@@ -794,6 +854,15 @@ export default function MockupGenerator({
     [filteredPantoneOptions, pantoneFilter]
   );
   const quickColorOptions = useMemo(() => getQuickColorOptions(), []);
+  const displayedMockupImageUrl = compositedPreviewUrl || previewImageUrl || result?.imageUrl || null;
+  const canSaveImage = Boolean(displayedMockupImageUrl);
+  const logoPrintQuickChoices = useMemo(
+    () =>
+      template?.allowedLogoPrintColors.filter((color) =>
+        ["white", "black", "original", "pantone_match"].includes(color)
+      ) || [],
+    [template]
+  );
 
   const hasAllPartPantones = template
     ? template.colorParts.every((part) => Boolean(partPantones[part.id]))
@@ -820,6 +889,18 @@ export default function MockupGenerator({
 
   function resetLogoTransform() {
     updateLogoTransform(createDefaultLogoTransform());
+  }
+
+  function rotateLogoBy(deltaDegrees: number) {
+    updateLogoTransform((current) => ({
+      ...current,
+      rotation: current.rotation + deltaDegrees
+    }));
+  }
+
+  function handleSaveImage() {
+    if (!displayedMockupImageUrl) return;
+    downloadImageUrl(displayedMockupImageUrl, `chili-mockup-${productSlug}.png`);
   }
 
   function handleLogoPointerDown(event: React.PointerEvent<HTMLImageElement>) {
@@ -1196,12 +1277,12 @@ export default function MockupGenerator({
               </div>
 
               <div className="render-stage">
-                {compositedPreviewUrl ? (
+                {displayedMockupImageUrl ? (
                   <img
                     className={`render-preview-image logo-adjust-preview${
                       isLogoDragging ? " is-logo-dragging" : ""
                     }`}
-                    src={compositedPreviewUrl}
+                    src={displayedMockupImageUrl}
                     alt="Generated Chili product mockup"
                     draggable={false}
                     onPointerDown={handleLogoPointerDown}
@@ -1254,14 +1335,44 @@ export default function MockupGenerator({
                           does not regenerate the AI image.
                         </p>
                       </div>
-                      <button
-                        className="secondary-link-button logo-reset-button"
-                        type="button"
-                        onClick={resetLogoTransform}
-                        disabled={!canAdjustLogo}
-                      >
-                        Reset
-                      </button>
+                      <div className="logo-adjust-actions">
+                        <button
+                          className="icon-action-button"
+                          type="button"
+                          title="Rotate 90 degrees counterclockwise"
+                          aria-label="Rotate 90 degrees counterclockwise"
+                          onClick={() => rotateLogoBy(-logoQuarterTurnDegrees)}
+                          disabled={!canAdjustLogo}
+                        >
+                          ↺
+                        </button>
+                        <button
+                          className="icon-action-button"
+                          type="button"
+                          title="Rotate 90 degrees clockwise"
+                          aria-label="Rotate 90 degrees clockwise"
+                          onClick={() => rotateLogoBy(logoQuarterTurnDegrees)}
+                          disabled={!canAdjustLogo}
+                        >
+                          ↻
+                        </button>
+                        <button
+                          className="secondary-link-button logo-reset-button"
+                          type="button"
+                          onClick={resetLogoTransform}
+                          disabled={!canAdjustLogo}
+                        >
+                          Reset
+                        </button>
+                        <button
+                          className="secondary-link-button"
+                          type="button"
+                          onClick={handleSaveImage}
+                          disabled={!canSaveImage}
+                        >
+                          Save image
+                        </button>
+                      </div>
                     </div>
 
                     <div className="logo-adjust-grid" aria-disabled={!canAdjustLogo}>
@@ -1328,26 +1439,11 @@ export default function MockupGenerator({
                         <output>{logoScalePercent}%</output>
                       </label>
 
-                      <label className="logo-slider-row" htmlFor="logoRotation">
+                      <div className="logo-slider-row logo-rotation-readout">
                         <span>Rotate</span>
-                        <input
-                          id="logoRotation"
-                          type="range"
-                          min="-45"
-                          max="45"
-                          step="1"
-                          value={logoRotationDegrees}
-                          disabled={!canAdjustLogo}
-                          onChange={(event) => {
-                            const value = Number(event.currentTarget.value);
-                            updateLogoTransform((current) => ({
-                              ...current,
-                              rotation: value
-                            }));
-                          }}
-                        />
+                        <div className="rotation-readout-track" aria-hidden="true" />
                         <output>{logoRotationDegrees}deg</output>
-                      </label>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1514,6 +1610,20 @@ export default function MockupGenerator({
                     </option>
                   ))}
                 </select>
+                {logoPrintQuickChoices.length ? (
+                  <div className="quick-choice-row" aria-label="Logo color shortcuts">
+                    {logoPrintQuickChoices.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`quick-choice-button${logoPrintColor === color ? " is-active" : ""}`}
+                        onClick={() => setLogoPrintColor(color)}
+                      >
+                        {logoPrintColorLabels[color] || humanizeOption(color)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <div className="form-field">

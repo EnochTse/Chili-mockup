@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMockupPrompt } from "@/lib/services/prompt.service";
+import { buildMockupPrompt, getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import { loadTemplate } from "@/lib/services/template.service";
 
 describe("prompt.service", () => {
@@ -47,6 +47,15 @@ describe("prompt.service", () => {
     expect(prompt).toContain("Keep the material finish even, clean, crisp");
     expect(prompt).toContain(
       "This mockup is for visual reference only, not final production artwork."
+    );
+  });
+
+  it("defines the mirror laser engraving method copy", () => {
+    expect(getPrintingMethodPrompt("mirror_laser_engraving")).toMatchObject({
+      label: "Mirror laser engraving"
+    });
+    expect(getPrintingMethodPrompt("mirror_laser_engraving").prompt).toContain(
+      "reflective black-to-white metallic gradient"
     );
   });
 });
