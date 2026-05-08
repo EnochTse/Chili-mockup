@@ -62,6 +62,7 @@ const defaultLogoTransform = { offsetX: 0, offsetY: 0, scale: 1, rotation: 0 };
 const logoOffsetLimit = 0.35;
 const localNextApiGenerateEndpoint = "/api/mockup/generate";
 const netlifyFunctionGenerateEndpoint = "/.netlify/functions/generate-mockup";
+type GenerateRequestMode = "local-next-api" | "netlify-job";
 
 type PixelRect = {
   x: number;
@@ -108,6 +109,26 @@ function getGenerateEndpoint() {
   return process.env.NODE_ENV === "development"
     ? localNextApiGenerateEndpoint
     : netlifyFunctionGenerateEndpoint;
+}
+
+function getGenerateRequestMode(endpoint: string): GenerateRequestMode {
+  return process.env.NODE_ENV === "development" && endpoint.startsWith("/api/")
+    ? "local-next-api"
+    : "netlify-job";
+}
+
+function getGenerateStartEndpoint(endpoint: string) {
+  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
+  return normalizedEndpoint.startsWith("/api/")
+    ? `${normalizedEndpoint}/start`
+    : `${normalizedEndpoint}-start`;
+}
+
+function getGenerateStatusEndpoint(endpoint: string) {
+  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
+  return normalizedEndpoint.startsWith("/api/")
+    ? `${normalizedEndpoint}/status`
+    : `${normalizedEndpoint}-status`;
 }
 
 function buildPreviewImageUrl(imageUrl: string, attempt: number) {
@@ -858,9 +879,11 @@ export default function MockupGenerator({
 
     try {
       const endpoint = getGenerateEndpoint();
-      const isLocalNextApi = endpoint.startsWith("/api/");
+      const requestMode = getGenerateRequestMode(endpoint);
+      const startEndpoint = getGenerateStartEndpoint(endpoint);
+      const statusEndpoint = getGenerateStatusEndpoint(endpoint);
 
-      if (isLocalNextApi) {
+      if (requestMode === "local-next-api") {
         const formData = makeGenerateFormData({
           productSlug,
           partPantones,
@@ -869,7 +892,7 @@ export default function MockupGenerator({
           logoFile
         });
         const startResult = await fetchJsonWithTimeout<GenerateResponse>(
-          "/api/mockup/generate/start",
+          startEndpoint,
           {
             method: "POST",
             body: formData
@@ -897,7 +920,7 @@ export default function MockupGenerator({
           await new Promise((resolve) => window.setTimeout(resolve, localJobPollIntervalMs));
 
           const statusResult = await fetchJsonWithTimeout<GenerateResponse>(
-            "/api/mockup/generate/status",
+            statusEndpoint,
             {
               method: "POST",
               headers: {
@@ -946,8 +969,8 @@ export default function MockupGenerator({
         return;
       }
 
-      const responseResult = await fetchJsonWithTimeout<GenerateResponse>(
-        endpoint,
+      const startResult = await fetchJsonWithTimeout<GenerateResponse>(
+        startEndpoint,
         {
           method: "POST",
           headers: {
@@ -962,22 +985,74 @@ export default function MockupGenerator({
             logoFile: await fileToLogoJsonPayload(logoFile)
           })
         },
-        generateFetchTimeoutMs
+        jobStatusFetchTimeoutMs
       );
-      const response = responseResult.response;
-      const data = responseResult.data;
+      const startData = startResult.data;
 
-      if (!response.ok || !data.success || !data.imageUrl) {
+      if (!startResult.response.ok || !startData.success || !startData.jobName) {
         throw new Error(
-          data.errorCode ? `${data.errorCode}: ${data.error}` : data.error || "Generation failed."
+          startData.errorCode
+            ? `${startData.errorCode}: ${startData.error}`
+            : startData.error || "Generation job failed to start."
         );
       }
 
-      if (data.provider !== "gemini" || data.stubMode) {
+      const startedAt = Date.now();
+      let finalData: GenerateResponse | null = null;
+
+      while (Date.now() - startedAt <= localJobMaxWaitMs) {
+        const elapsedMs = Date.now() - startedAt;
+        setGenerationStatus(
+          `Gemini job ${startData.state || "queued"}... ${formatElapsedTime(elapsedMs)}`
+        );
+        await new Promise((resolve) => window.setTimeout(resolve, localJobPollIntervalMs));
+
+        const statusResult = await fetchJsonWithTimeout<GenerateResponse>(
+          statusEndpoint,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json"
+            },
+            body: JSON.stringify({
+              productSlug,
+              jobName: startData.jobName
+            })
+          },
+          jobStatusFetchTimeoutMs
+        );
+        const statusData = statusResult.data;
+
+        if (!statusResult.response.ok || !statusData.success) {
+          throw new Error(
+            statusData.errorCode
+              ? `${statusData.errorCode}: ${statusData.error}`
+              : statusData.error || "Generation status check failed."
+          );
+        }
+
+        startData.state = statusData.state || startData.state;
+        setGenerationStatus(
+          `Gemini job ${statusData.state || "running"}... ${formatElapsedTime(elapsedMs)}`
+        );
+
+        if (statusData.completed && statusData.imageUrl) {
+          finalData = statusData;
+          break;
+        }
+      }
+
+      if (!finalData?.imageUrl) {
+        throw new Error(
+          "AI_GENERATION_TIMEOUT: Gemini is still processing this job after 15 minutes. Please try again later."
+        );
+      }
+
+      if (finalData.provider !== "gemini" || finalData.stubMode) {
         throw new Error("REAL_AI_REQUIRED: The API did not return a real Gemini image.");
       }
 
-      setResult(data);
+      setResult(finalData);
       setGenerationStatus(null);
     } catch (error) {
       setGenerationStatus(null);
