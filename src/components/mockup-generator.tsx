@@ -686,6 +686,7 @@ export default function MockupGenerator({
   const [isPreviewResolving, setIsPreviewResolving] = useState(false);
   const [logoTransform, setLogoTransform] = useState<LogoTransform>(createDefaultLogoTransform);
   const [isLogoDragging, setIsLogoDragging] = useState(false);
+  const [isInstructionOpen, setIsInstructionOpen] = useState(false);
   const previewRetryCountRef = useRef(0);
   const previewRetryTimeoutRef = useRef<number | null>(null);
   const logoDragStateRef = useRef<LogoDragState | null>(null);
@@ -747,6 +748,7 @@ export default function MockupGenerator({
       setIsPreviewResolving(false);
       setLogoTransform(createDefaultLogoTransform());
       setIsLogoDragging(false);
+      setIsInstructionOpen(false);
       logoDragStateRef.current = null;
       setSubmitError(null);
       setGenerationStatus(null);
@@ -763,6 +765,19 @@ export default function MockupGenerator({
       clearPreviewRetryTimeout();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isInstructionOpen) return;
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsInstructionOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [isInstructionOpen]);
 
   useEffect(() => {
     clearPreviewRetryTimeout();
@@ -855,6 +870,13 @@ export default function MockupGenerator({
   );
   const quickColorOptions = useMemo(() => getQuickColorOptions(), []);
   const displayedMockupImageUrl = compositedPreviewUrl || previewImageUrl || result?.imageUrl || null;
+  const stageImageUrl = displayedMockupImageUrl || template?.baseImageUrl || null;
+  const stageImageAlt =
+    result?.imageUrl || compositedPreviewUrl || previewImageUrl
+      ? "Generated Chili product mockup"
+      : template
+        ? `${template.name} base product`
+        : "Chili product";
   const canSaveImage = Boolean(displayedMockupImageUrl);
   const logoPrintQuickChoices = useMemo(
     () =>
@@ -1201,89 +1223,36 @@ export default function MockupGenerator({
       ) : template ? (
         <div className="workflow-grid">
           <div className="workflow-main">
-            <section className="surface asset-panel">
-              <div className="panel-head">
-                <p className="panel-kicker">Template</p>
-                <h2 className="panel-title">{template.name}</h2>
-                <p className="panel-description">{template.description}</p>
-                {template.size ? <p className="fine-print">Size: {template.size}</p> : null}
-                {template.specifications?.length ? (
-                  <dl className="spec-grid">
-                    {template.specifications.map((specification) => (
-                      <div
-                        key={`${specification.label}-${specification.value}`}
-                        className="spec-row"
-                      >
-                        <dt className="debug-label">{specification.label}</dt>
-                        <dd className="figure-caption">{specification.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : null}
-              </div>
-
-              <div className="asset-grid">
-                <figure className="asset-figure">
-                  <div className="image-frame">
-                    <img src={template.baseImageUrl} alt={`${template.name} base product`} />
-                  </div>
-                  <figcaption className="figure-caption">Base product image</figcaption>
-                </figure>
-
-                <details className="instruction-panel" open={showDebug}>
-                  <summary className="details-summary">Instruction image</summary>
-                  <div className="image-frame result-frame">
-                    <img
-                      src={template.instructionImageUrl}
-                      alt={`${template.name} instruction areas`}
-                    />
-                  </div>
-                  <div className="instruction-legend">
-                    {template.colorParts.map((part) => (
-                      <div key={part.id} className="instruction-legend-item">
-                        {part.instructionColorHex ? (
-                          <span
-                            className="color-swatch"
-                            style={{ backgroundColor: part.instructionColorHex }}
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                        <div className="instruction-legend-copy">
-                          <strong>{part.label}</strong>
-                          <span>{part.description}</span>
-                          {part.instructionCue ? <span>{part.instructionCue}</span> : null}
-                        </div>
-                      </div>
-                    ))}
-                    <p className="fine-print">
-                      Only the configured product parts above should be recolored. All other
-                      surfaces stay unchanged.
-                    </p>
-                  </div>
-                </details>
-              </div>
-            </section>
-
             <section
-              className="surface render-panel"
+              className="render-panel"
               aria-busy={isSubmitting || isPreviewResolving}
             >
-              <div className="panel-head">
-                <p className="panel-kicker">Rendering</p>
-                <h2 className="section-title">Mockup preview</h2>
-                <p className="panel-description">
-                  This section shows the generated reference mockup at a larger size.
-                </p>
-              </div>
-
               <div className="render-stage">
-                {displayedMockupImageUrl ? (
+                <div className="render-stage-toolbar">
+                  <div className="render-stage-copy">
+                    <p className="panel-kicker">Base product</p>
+                    <h2 className="render-stage-title">{template.name}</h2>
+                    <p className="render-stage-description">{template.description}</p>
+                    {template.size ? (
+                      <p className="render-stage-size">Size: {template.size}</p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="instruction-toggle-button"
+                    onClick={() => setIsInstructionOpen(true)}
+                  >
+                    Instruction image
+                  </button>
+                </div>
+
+                {stageImageUrl ? (
                   <img
                     className={`render-preview-image logo-adjust-preview${
-                      isLogoDragging ? " is-logo-dragging" : ""
+                      displayedMockupImageUrl && isLogoDragging ? " is-logo-dragging" : ""
                     }`}
-                    src={displayedMockupImageUrl}
-                    alt="Generated Chili product mockup"
+                    src={stageImageUrl}
+                    alt={stageImageAlt}
                     draggable={false}
                     onPointerDown={handleLogoPointerDown}
                     onPointerMove={handleLogoPointerMove}
@@ -1297,7 +1266,7 @@ export default function MockupGenerator({
                 ) : (
                   <div className="render-placeholder">
                     <p className="render-placeholder-title">
-                      {previewImageUrl ? "Preparing preview" : "Ready to render"}
+                      {previewImageUrl ? "Preparing preview" : "Base product preview"}
                     </p>
                     <p className="render-placeholder-copy">
                       {previewImageUrl
@@ -1319,139 +1288,145 @@ export default function MockupGenerator({
                 ) : null}
               </div>
 
-              {result?.imageUrl ? (
-                <div className="render-meta">
-                  <p className="fine-print">Visual reference only.</p>
+              <div className="render-meta">
+                <p className="fine-print">Visual reference only.</p>
+                {result?.imageUrl ? (
+                  <>
+                    <p className="result-meta">
+                      Product generated by {result.model || "Nano Banana 2"} via Gemini API.
+                      Logo applied locally from the uploaded file.
+                    </p>
+                    <div className="logo-adjust-panel">
+                      <div className="logo-adjust-head">
+                        <div>
+                          <p className="logo-adjust-title">Logo position adjustment</p>
+                          <p className="fine-print">
+                            Drag the preview, or fine-tune the logo with the controls below. This
+                            does not regenerate the AI image.
+                          </p>
+                        </div>
+                        <div className="logo-adjust-actions">
+                          <button
+                            className="icon-action-button"
+                            type="button"
+                            title="Rotate 90 degrees counterclockwise"
+                            aria-label="Rotate 90 degrees counterclockwise"
+                            onClick={() => rotateLogoBy(-logoQuarterTurnDegrees)}
+                            disabled={!canAdjustLogo}
+                          >
+                            ↺
+                          </button>
+                          <button
+                            className="icon-action-button"
+                            type="button"
+                            title="Rotate 90 degrees clockwise"
+                            aria-label="Rotate 90 degrees clockwise"
+                            onClick={() => rotateLogoBy(logoQuarterTurnDegrees)}
+                            disabled={!canAdjustLogo}
+                          >
+                            ↻
+                          </button>
+                          <button
+                            className="secondary-link-button logo-reset-button"
+                            type="button"
+                            onClick={resetLogoTransform}
+                            disabled={!canAdjustLogo}
+                          >
+                            Reset
+                          </button>
+                          <button
+                            className="secondary-link-button"
+                            type="button"
+                            onClick={handleSaveImage}
+                            disabled={!canSaveImage}
+                          >
+                            Save image
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="logo-adjust-grid" aria-disabled={!canAdjustLogo}>
+                        <label className="logo-slider-row" htmlFor="logoOffsetX">
+                          <span>Move X</span>
+                          <input
+                            id="logoOffsetX"
+                            type="range"
+                            min="-35"
+                            max="35"
+                            step="1"
+                            value={logoMoveXPercent}
+                            disabled={!canAdjustLogo}
+                            onChange={(event) => {
+                              const value = Number(event.currentTarget.value) / 100;
+                              updateLogoTransform((current) => ({
+                                ...current,
+                                offsetX: value
+                              }));
+                            }}
+                          />
+                          <output>{logoMoveXPercent}%</output>
+                        </label>
+
+                        <label className="logo-slider-row" htmlFor="logoOffsetY">
+                          <span>Move Y</span>
+                          <input
+                            id="logoOffsetY"
+                            type="range"
+                            min="-35"
+                            max="35"
+                            step="1"
+                            value={logoMoveYPercent}
+                            disabled={!canAdjustLogo}
+                            onChange={(event) => {
+                              const value = Number(event.currentTarget.value) / 100;
+                              updateLogoTransform((current) => ({
+                                ...current,
+                                offsetY: value
+                              }));
+                            }}
+                          />
+                          <output>{logoMoveYPercent}%</output>
+                        </label>
+
+                        <label className="logo-slider-row" htmlFor="logoScale">
+                          <span>Scale</span>
+                          <input
+                            id="logoScale"
+                            type="range"
+                            min="35"
+                            max="220"
+                            step="1"
+                            value={logoScalePercent}
+                            disabled={!canAdjustLogo}
+                            onChange={(event) => {
+                              const value = Number(event.currentTarget.value) / 100;
+                              updateLogoTransform((current) => ({
+                                ...current,
+                                scale: value
+                              }));
+                            }}
+                          />
+                          <output>{logoScalePercent}%</output>
+                        </label>
+
+                        <div className="logo-slider-row logo-rotation-readout">
+                          <span>Rotate</span>
+                          <div className="rotation-readout-track" aria-hidden="true" />
+                          <output>{logoRotationDegrees}deg</output>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
                   <p className="result-meta">
-                    Product generated by {result.model || "Nano Banana 2"} via Gemini API.
-                    Logo applied locally from the uploaded file.
+                    Base product image is shown here until you generate the customized mockup.
                   </p>
-                  <div className="logo-adjust-panel">
-                    <div className="logo-adjust-head">
-                      <div>
-                        <p className="logo-adjust-title">Logo position adjustment</p>
-                        <p className="fine-print">
-                          Drag the preview, or fine-tune the logo with the controls below. This
-                          does not regenerate the AI image.
-                        </p>
-                      </div>
-                      <div className="logo-adjust-actions">
-                        <button
-                          className="icon-action-button"
-                          type="button"
-                          title="Rotate 90 degrees counterclockwise"
-                          aria-label="Rotate 90 degrees counterclockwise"
-                          onClick={() => rotateLogoBy(-logoQuarterTurnDegrees)}
-                          disabled={!canAdjustLogo}
-                        >
-                          ↺
-                        </button>
-                        <button
-                          className="icon-action-button"
-                          type="button"
-                          title="Rotate 90 degrees clockwise"
-                          aria-label="Rotate 90 degrees clockwise"
-                          onClick={() => rotateLogoBy(logoQuarterTurnDegrees)}
-                          disabled={!canAdjustLogo}
-                        >
-                          ↻
-                        </button>
-                        <button
-                          className="secondary-link-button logo-reset-button"
-                          type="button"
-                          onClick={resetLogoTransform}
-                          disabled={!canAdjustLogo}
-                        >
-                          Reset
-                        </button>
-                        <button
-                          className="secondary-link-button"
-                          type="button"
-                          onClick={handleSaveImage}
-                          disabled={!canSaveImage}
-                        >
-                          Save image
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="logo-adjust-grid" aria-disabled={!canAdjustLogo}>
-                      <label className="logo-slider-row" htmlFor="logoOffsetX">
-                        <span>Move X</span>
-                        <input
-                          id="logoOffsetX"
-                          type="range"
-                          min="-35"
-                          max="35"
-                          step="1"
-                          value={logoMoveXPercent}
-                          disabled={!canAdjustLogo}
-                          onChange={(event) => {
-                            const value = Number(event.currentTarget.value) / 100;
-                            updateLogoTransform((current) => ({
-                              ...current,
-                              offsetX: value
-                            }));
-                          }}
-                        />
-                        <output>{logoMoveXPercent}%</output>
-                      </label>
-
-                      <label className="logo-slider-row" htmlFor="logoOffsetY">
-                        <span>Move Y</span>
-                        <input
-                          id="logoOffsetY"
-                          type="range"
-                          min="-35"
-                          max="35"
-                          step="1"
-                          value={logoMoveYPercent}
-                          disabled={!canAdjustLogo}
-                          onChange={(event) => {
-                            const value = Number(event.currentTarget.value) / 100;
-                            updateLogoTransform((current) => ({
-                              ...current,
-                              offsetY: value
-                            }));
-                          }}
-                        />
-                        <output>{logoMoveYPercent}%</output>
-                      </label>
-
-                      <label className="logo-slider-row" htmlFor="logoScale">
-                        <span>Scale</span>
-                        <input
-                          id="logoScale"
-                          type="range"
-                          min="35"
-                          max="220"
-                          step="1"
-                          value={logoScalePercent}
-                          disabled={!canAdjustLogo}
-                          onChange={(event) => {
-                            const value = Number(event.currentTarget.value) / 100;
-                            updateLogoTransform((current) => ({
-                              ...current,
-                              scale: value
-                            }));
-                          }}
-                        />
-                        <output>{logoScalePercent}%</output>
-                      </label>
-
-                      <div className="logo-slider-row logo-rotation-readout">
-                        <span>Rotate</span>
-                        <div className="rotation-readout-track" aria-hidden="true" />
-                        <output>{logoRotationDegrees}deg</output>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+                )}
+              </div>
             </section>
           </div>
 
-          <section className="surface form-panel">
+          <section className="form-panel">
             <div className="form-heading">
               <p className="panel-kicker">Configuration</p>
               <h2 className="section-title">Generate mockup</h2>
@@ -1713,6 +1688,87 @@ export default function MockupGenerator({
               </details>
             ) : null}
           </section>
+
+          {isInstructionOpen ? (
+            <div
+              className="instruction-modal-backdrop"
+              role="presentation"
+              onClick={() => setIsInstructionOpen(false)}
+            >
+              <div
+                className="instruction-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="instruction-modal-title"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="instruction-modal-head">
+                  <div>
+                    <p className="panel-kicker">Instruction image</p>
+                    <h2 id="instruction-modal-title" className="section-title">
+                      {template.name}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="instruction-close-button"
+                    aria-label="Close instruction image"
+                    onClick={() => setIsInstructionOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="instruction-modal-body">
+                  <div className="image-frame instruction-modal-frame">
+                    <img
+                      src={template.instructionImageUrl}
+                      alt={`${template.name} instruction areas`}
+                    />
+                  </div>
+                  <div className="instruction-modal-sidebar">
+                    <div className="instruction-legend">
+                      {template.colorParts.map((part) => (
+                        <div key={part.id} className="instruction-legend-item">
+                          {part.instructionColorHex ? (
+                            <span
+                              className="color-swatch"
+                              style={{ backgroundColor: part.instructionColorHex }}
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          <div className="instruction-legend-copy">
+                            <strong>{part.label}</strong>
+                            <span>{part.description}</span>
+                            {part.instructionCue ? <span>{part.instructionCue}</span> : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {template.specifications?.length ? (
+                      <dl className="spec-grid instruction-spec-grid">
+                        {template.specifications.map((specification) => (
+                          <div
+                            key={`${specification.label}-${specification.value}`}
+                            className="spec-row"
+                          >
+                            <dt className="debug-label">{specification.label}</dt>
+                            <dd className="figure-caption">{specification.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : null}
+
+                    <p className="fine-print">
+                      Only the configured product parts above should be recolored. All other
+                      surfaces stay unchanged.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </main>
