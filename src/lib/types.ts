@@ -16,6 +16,15 @@ export interface ProductColorPart {
   instructionCue?: string;
   instructionColorHex?: string;
   defaultPantoneCode?: string;
+  indicatorAnchors?: PartIndicatorAnchor[];
+}
+
+export interface PartIndicatorAnchor {
+  id: string;
+  targetXPercent: number;
+  targetYPercent: number;
+  labelOffsetXPercent: number;
+  labelOffsetYPercent: number;
 }
 
 export interface LogoPlacement {

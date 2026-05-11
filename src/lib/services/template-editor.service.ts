@@ -2,7 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { AppError } from "@/lib/errors";
 import { loadTemplate, toTemplatePublicDto } from "@/lib/services/template.service";
-import type { ProductColorPart, ProductSpecification, TemplatePublicDto } from "@/lib/types";
+import type {
+  PartIndicatorAnchor,
+  ProductColorPart,
+  ProductSpecification,
+  TemplatePublicDto
+} from "@/lib/types";
 
 const slugPattern = /^[a-z0-9][a-z0-9-]*$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/;
@@ -91,9 +96,80 @@ function sanitizeColorParts(
     instructionCue?: string;
     instructionColorHex?: string;
     defaultPantoneCode?: string;
+    indicatorAnchors?: Array<{
+      id?: string;
+      targetXPercent?: number | string;
+      targetYPercent?: number | string;
+      labelOffsetXPercent?: number | string;
+      labelOffsetYPercent?: number | string;
+    }>;
   }>
 ): ProductColorPart[] {
   const usedIds = new Set<string>();
+  function sanitizeIndicatorAnchors(
+    anchors: Array<{
+      id?: string;
+      targetXPercent?: number | string;
+      targetYPercent?: number | string;
+      labelOffsetXPercent?: number | string;
+      labelOffsetYPercent?: number | string;
+    }> | undefined,
+    partIndex: number
+  ): PartIndicatorAnchor[] | undefined {
+    if (!anchors?.length) return undefined;
+
+    const normalized = anchors
+      .slice(0, 3)
+      .map((anchor, anchorIndex) => {
+        const targetXPercent = Number(anchor.targetXPercent);
+        const targetYPercent = Number(anchor.targetYPercent);
+        const labelOffsetXPercent = Number(anchor.labelOffsetXPercent ?? 0);
+        const labelOffsetYPercent = Number(anchor.labelOffsetYPercent ?? 0);
+
+        if (
+          !Number.isFinite(targetXPercent) ||
+          !Number.isFinite(targetYPercent) ||
+          targetXPercent < 0 ||
+          targetXPercent > 100 ||
+          targetYPercent < 0 ||
+          targetYPercent > 100
+        ) {
+          throw new AppError(
+            "INVALID_FORM_DATA",
+            `Indicator target position for part ${partIndex + 1} must be between 0 and 100.`,
+            400
+          );
+        }
+
+        if (
+          !Number.isFinite(labelOffsetXPercent) ||
+          !Number.isFinite(labelOffsetYPercent) ||
+          labelOffsetXPercent < -100 ||
+          labelOffsetXPercent > 100 ||
+          labelOffsetYPercent < -100 ||
+          labelOffsetYPercent > 100
+        ) {
+          throw new AppError(
+            "INVALID_FORM_DATA",
+            `Indicator label offset for part ${partIndex + 1} must be between -100 and 100.`,
+            400
+          );
+        }
+
+        return {
+          id:
+            (anchor.id || "").trim() ||
+            `part-${partIndex + 1}-indicator-${anchorIndex + 1}`,
+          targetXPercent,
+          targetYPercent,
+          labelOffsetXPercent,
+          labelOffsetYPercent
+        };
+      });
+
+    return normalized.length ? normalized : undefined;
+  }
+
   const parts = raw
     .map((part, index) => {
       const baseId = normalizePartId(part.id || part.label || "", index);
@@ -112,7 +188,8 @@ function sanitizeColorParts(
         description: (part.description || "").trim() || `Color-controlled region ${index + 1}.`,
         instructionCue: (part.instructionCue || "").trim() || undefined,
         instructionColorHex: (part.instructionColorHex || "").trim() || undefined,
-        defaultPantoneCode: (part.defaultPantoneCode || "").trim() || undefined
+        defaultPantoneCode: (part.defaultPantoneCode || "").trim() || undefined,
+        indicatorAnchors: sanitizeIndicatorAnchors(part.indicatorAnchors, index)
       };
     })
     .filter((part) => part.label && part.description);
@@ -175,6 +252,13 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
         instructionCue?: string;
         instructionColorHex?: string;
         defaultPantoneCode?: string;
+        indicatorAnchors?: Array<{
+          id?: string;
+          targetXPercent?: number | string;
+          targetYPercent?: number | string;
+          labelOffsetXPercent?: number | string;
+          labelOffsetYPercent?: number | string;
+        }>;
       }>
     >(formData, "colorParts")
   );

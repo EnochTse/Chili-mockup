@@ -31,7 +31,30 @@
       "description": "Main umbrella canopy area highlighted for recoloring in the instruction image.",
       "instructionCue": "Blue umbrella canopy region",
       "instructionColorHex": "#1450FF",
-      "defaultPantoneCode": "Pantone Black C"
+      "defaultPantoneCode": "Pantone Black C",
+      "indicatorAnchors": [
+        {
+          "id": "canopy-indicator-1",
+          "targetXPercent": 24,
+          "targetYPercent": 34,
+          "labelOffsetXPercent": -14,
+          "labelOffsetYPercent": -14
+        },
+        {
+          "id": "canopy-indicator-2",
+          "targetXPercent": 50,
+          "targetYPercent": 26,
+          "labelOffsetXPercent": 0,
+          "labelOffsetYPercent": -18
+        },
+        {
+          "id": "canopy-indicator-3",
+          "targetXPercent": 76,
+          "targetYPercent": 34,
+          "labelOffsetXPercent": 14,
+          "labelOffsetYPercent": -14
+        }
+      ]
     }
   ],
   "logoPlacement": {

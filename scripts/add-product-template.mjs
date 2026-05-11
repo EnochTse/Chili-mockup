@@ -77,7 +77,16 @@ const template = {
       id: "part-1",
       label: "Part 1",
       description: "Primary recolorable area shown in the instruction image.",
-      defaultPantoneCode: "Pantone Black C"
+      defaultPantoneCode: "Pantone Black C",
+      indicatorAnchors: [
+        {
+          id: "part-1-indicator-1",
+          targetXPercent: 50,
+          targetYPercent: 50,
+          labelOffsetXPercent: 16,
+          labelOffsetYPercent: -12
+        }
+      ]
     }
   ],
   logoPlacement: {

@@ -34,7 +34,19 @@ const productColorPartSchema = z.object({
   description: z.string().min(1),
   instructionCue: z.string().min(1).optional(),
   instructionColorHex: z.string().regex(hexColorPattern).optional(),
-  defaultPantoneCode: z.string().min(1).optional()
+  defaultPantoneCode: z.string().min(1).optional(),
+  indicatorAnchors: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        targetXPercent: z.number().min(0).max(100),
+        targetYPercent: z.number().min(0).max(100),
+        labelOffsetXPercent: z.number().min(-100).max(100),
+        labelOffsetYPercent: z.number().min(-100).max(100)
+      })
+    )
+    .max(3)
+    .optional()
 });
 
 const templateSchema = z.object({

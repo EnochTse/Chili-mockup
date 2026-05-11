@@ -33,7 +33,16 @@
       "description": "Bottom bottle body",
       "instructionCue": "Blue lower bottle region",
       "instructionColorHex": "#1450FF",
-      "defaultPantoneCode": "Pantone Black C"
+      "defaultPantoneCode": "Pantone Black C",
+      "indicatorAnchors": [
+        {
+          "id": "part-1-indicator-1",
+          "targetXPercent": 47,
+          "targetYPercent": 72,
+          "labelOffsetXPercent": -18,
+          "labelOffsetYPercent": -8
+        }
+      ]
     },
     {
       "id": "part-2-7dlmn0",
@@ -41,7 +50,16 @@
       "description": "Top bottle lid and upper body",
       "instructionCue": "Red upper bottle region",
       "instructionColorHex": "#FF1A0A",
-      "defaultPantoneCode": "Pantone Black C"
+      "defaultPantoneCode": "Pantone Black C",
+      "indicatorAnchors": [
+        {
+          "id": "part-2-indicator-1",
+          "targetXPercent": 48,
+          "targetYPercent": 30,
+          "labelOffsetXPercent": -18,
+          "labelOffsetYPercent": -12
+        }
+      ]
     },
     {
       "id": "part-3-5nhyaf",
@@ -49,7 +67,16 @@
       "description": "Handle loop",
       "instructionCue": "Orange handle loop region",
       "instructionColorHex": "#FF9800",
-      "defaultPantoneCode": "Pantone Black C"
+      "defaultPantoneCode": "Pantone Black C",
+      "indicatorAnchors": [
+        {
+          "id": "part-3-indicator-1",
+          "targetXPercent": 67,
+          "targetYPercent": 22,
+          "labelOffsetXPercent": 16,
+          "labelOffsetYPercent": -10
+        }
+      ]
     }
   ],
   "logoPlacement": {

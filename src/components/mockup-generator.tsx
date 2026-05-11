@@ -208,6 +208,11 @@ function formatElapsedTime(ms: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+function getPartNumberText(label: string, fallbackIndex: number) {
+  const match = label.match(/\d+/);
+  return match?.[0] || `${fallbackIndex + 1}`;
+}
+
 function buildSelectedPartPantones(
   template: TemplatePublicDto,
   partPantones: Record<string, string>
@@ -731,9 +736,20 @@ export default function MockupGenerator({
   const [logoTransform, setLogoTransform] = useState<LogoTransform>(createDefaultLogoTransform);
   const [isLogoDragging, setIsLogoDragging] = useState(false);
   const [isInstructionOpen, setIsInstructionOpen] = useState(false);
+  const [focusedPartId, setFocusedPartId] = useState<string | null>(
+    initialTemplate?.colorParts[0]?.id || null
+  );
+  const [renderPreviewShellSize, setRenderPreviewShellSize] = useState({
+    width: 0,
+    height: 0
+  });
   const previewRetryCountRef = useRef(0);
   const previewRetryTimeoutRef = useRef<number | null>(null);
   const logoDragStateRef = useRef<LogoDragState | null>(null);
+  const renderPanelRef = useRef<HTMLElement | null>(null);
+  const formPanelRef = useRef<HTMLElement | null>(null);
+  const renderPreviewShellRef = useRef<HTMLDivElement | null>(null);
+  const partCardRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const showDebug =
     process.env.NODE_ENV === "development" ||
@@ -776,6 +792,7 @@ export default function MockupGenerator({
       setIsTemplateLoading(false);
       setPantoneFilter("");
       setOpenPartId(null);
+      setFocusedPartId(initialTemplate.colorParts[0]?.id || null);
       setPartPantones(
         Object.fromEntries(
           initialTemplate.colorParts
@@ -802,6 +819,7 @@ export default function MockupGenerator({
     setTemplate(null);
     setTemplateError("This product has not been configured for mockup generation.");
     setIsTemplateLoading(false);
+    setFocusedPartId(null);
   }, [productSlug]);
 
   useEffect(() => {
@@ -822,6 +840,107 @@ export default function MockupGenerator({
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, [isInstructionOpen]);
+
+  useEffect(() => {
+    const previewShell = renderPreviewShellRef.current;
+    if (!previewShell || typeof ResizeObserver === "undefined") return;
+
+    const updateSize = () => {
+      const bounds = previewShell.getBoundingClientRect();
+      setRenderPreviewShellSize({
+        width: bounds.width,
+        height: bounds.height
+      });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(previewShell);
+    return () => observer.disconnect();
+  }, [template?.baseImageUrl, result?.imageUrl, previewImageUrl, compositedPreviewUrl]);
+
+  useEffect(() => {
+    if (!template) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let isDisposed = false;
+    let cleanup: (() => void) | undefined;
+
+    Promise.all([import("gsap"), import("gsap/ScrollTrigger")])
+      .then(([gsapModule, scrollTriggerModule]) => {
+        if (isDisposed) return;
+
+        const { gsap } = gsapModule;
+        const { ScrollTrigger } = scrollTriggerModule;
+        gsap.registerPlugin(ScrollTrigger);
+
+        const context = gsap.context(() => {
+          if (renderPanelRef.current) {
+            gsap.fromTo(
+              renderPanelRef.current,
+              { autoAlpha: 0, y: 24 },
+              {
+                autoAlpha: 1,
+                y: 0,
+                duration: 0.3,
+                ease: "power2.out",
+                scrollTrigger: {
+                  trigger: renderPanelRef.current,
+                  start: "top 84%"
+                }
+              }
+            );
+          }
+
+          if (formPanelRef.current) {
+            gsap.fromTo(
+              formPanelRef.current,
+              { autoAlpha: 0, y: 24 },
+              {
+                autoAlpha: 1,
+                y: 0,
+                duration: 0.3,
+                ease: "power2.out",
+                scrollTrigger: {
+                  trigger: formPanelRef.current,
+                  start: "top 82%"
+                }
+              }
+            );
+          }
+
+          const partCards = partCardRefs.current.filter(
+            (card): card is HTMLDivElement => Boolean(card)
+          );
+
+          if (partCards.length) {
+            gsap.fromTo(
+              partCards,
+              { autoAlpha: 0, y: 18 },
+              {
+                autoAlpha: 1,
+                y: 0,
+                duration: 0.3,
+                ease: "power2.out",
+                stagger: 0.06,
+                scrollTrigger: {
+                  trigger: formPanelRef.current || partCards[0],
+                  start: "top 80%"
+                }
+              }
+            );
+          }
+        });
+
+        cleanup = () => context.revert();
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isDisposed = true;
+      cleanup?.();
+    };
+  }, [template?.slug, template?.colorParts.length]);
 
   useEffect(() => {
     clearPreviewRetryTimeout();
@@ -946,6 +1065,46 @@ export default function MockupGenerator({
   const logoMoveYPercent = Math.round(logoTransform.offsetY * 100);
   const logoScalePercent = Math.round(logoTransform.scale * 100);
   const logoRotationDegrees = Math.round(logoTransform.rotation);
+  const activePartId = focusedPartId || openPartId || template?.colorParts[0]?.id || null;
+  const activePartIndex = template?.colorParts.findIndex((part) => part.id === activePartId) ?? -1;
+  const activePart =
+    activePartIndex >= 0 && template ? template.colorParts[activePartIndex] : null;
+  const activePartNumber =
+    activePart && activePartIndex >= 0
+      ? getPartNumberText(activePart.label, activePartIndex)
+      : null;
+  const activePartIndicators = useMemo(() => {
+    if (!activePart || !renderPreviewShellSize.width || !renderPreviewShellSize.height) {
+      return [];
+    }
+
+    return (activePart.indicatorAnchors || []).map((anchor, anchorIndex) => {
+      const targetX = (renderPreviewShellSize.width * anchor.targetXPercent) / 100;
+      const targetY = (renderPreviewShellSize.height * anchor.targetYPercent) / 100;
+      const labelX = clamp(
+        targetX + (renderPreviewShellSize.width * anchor.labelOffsetXPercent) / 100,
+        32,
+        Math.max(32, renderPreviewShellSize.width - 32)
+      );
+      const labelY = clamp(
+        targetY + (renderPreviewShellSize.height * anchor.labelOffsetYPercent) / 100,
+        28,
+        Math.max(28, renderPreviewShellSize.height - 28)
+      );
+      const deltaX = targetX - labelX;
+      const deltaY = targetY - labelY;
+
+      return {
+        id: anchor.id || `${activePart.id}-indicator-${anchorIndex + 1}`,
+        targetX,
+        targetY,
+        labelX,
+        labelY,
+        angle: (Math.atan2(deltaY, deltaX) * 180) / Math.PI,
+        distance: Math.hypot(deltaX, deltaY)
+      };
+    });
+  }, [activePart, renderPreviewShellSize]);
 
   function updateLogoTransform(next: LogoTransform | ((current: LogoTransform) => LogoTransform)) {
     setLogoTransform((current) =>
@@ -1261,10 +1420,11 @@ export default function MockupGenerator({
       ) : template ? (
         <div className="workflow-grid">
           <div className="workflow-main">
-            <section
-              className="render-panel"
-              aria-busy={isSubmitting || isPreviewResolving}
-            >
+              <section
+                className="render-panel"
+                aria-busy={isSubmitting || isPreviewResolving}
+                ref={renderPanelRef}
+              >
               <div className="render-stage">
                 <div className="render-stage-toolbar">
                   <div className="render-stage-copy">
@@ -1285,22 +1445,69 @@ export default function MockupGenerator({
                 </div>
 
                 {stageImageUrl ? (
-                  <img
-                    className={`render-preview-image logo-adjust-preview${
-                      displayedMockupImageUrl && isLogoDragging ? " is-logo-dragging" : ""
-                    }`}
-                    src={stageImageUrl}
-                    alt={stageImageAlt}
-                    draggable={false}
-                    onPointerDown={handleLogoPointerDown}
-                    onPointerMove={handleLogoPointerMove}
-                    onPointerUp={finishLogoDrag}
-                    onPointerCancel={finishLogoDrag}
-                    onLostPointerCapture={() => {
-                      logoDragStateRef.current = null;
-                      setIsLogoDragging(false);
-                    }}
-                  />
+                  <div className="render-preview-shell" ref={renderPreviewShellRef}>
+                    <img
+                      className={`render-preview-image logo-adjust-preview${
+                        displayedMockupImageUrl && isLogoDragging ? " is-logo-dragging" : ""
+                      }`}
+                      src={stageImageUrl}
+                      alt={stageImageAlt}
+                      draggable={false}
+                      onPointerDown={handleLogoPointerDown}
+                      onPointerMove={handleLogoPointerMove}
+                      onPointerUp={finishLogoDrag}
+                      onPointerCancel={finishLogoDrag}
+                      onLostPointerCapture={() => {
+                        logoDragStateRef.current = null;
+                        setIsLogoDragging(false);
+                      }}
+                    />
+
+                    {activePart && activePartIndicators.length ? (
+                      <div className="part-indicator-layer" aria-hidden="true">
+                        <div className="part-indicator-caption">
+                          <span className="part-indicator-caption-label">Active part</span>
+                          <strong>{activePart.label}</strong>
+                        </div>
+                        {activePartIndicators.map((indicator, indicatorIndex) => (
+                          <div key={indicator.id} className="part-indicator">
+                            <div
+                              className="part-indicator-line"
+                              style={{
+                                left: `${indicator.labelX}px`,
+                                top: `${indicator.labelY}px`,
+                                width: `${indicator.distance}px`,
+                                transform: `translateY(-50%) rotate(${indicator.angle}deg)`
+                              }}
+                            />
+                            <div
+                              className="part-indicator-dot"
+                              style={{
+                                left: `${indicator.targetX}px`,
+                                top: `${indicator.targetY}px`
+                              }}
+                            />
+                            <div
+                              className="part-indicator-badge"
+                              style={{
+                                left: `${indicator.labelX}px`,
+                                top: `${indicator.labelY}px`
+                              }}
+                            >
+                              <span className="part-indicator-badge-number">
+                                {activePartNumber}
+                              </span>
+                              <span className="part-indicator-badge-copy">
+                                {activePartIndicators.length > 1
+                                  ? `Spot ${indicatorIndex + 1}`
+                                  : activePart.label}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   <div className="render-placeholder">
                     <p className="render-placeholder-title">
@@ -1464,7 +1671,7 @@ export default function MockupGenerator({
             </section>
           </div>
 
-          <section className="form-panel">
+          <section className="form-panel" ref={formPanelRef}>
             <div className="form-heading">
               <p className="panel-kicker">Configuration</p>
               <h2 className="section-title">Generate mockup</h2>
@@ -1491,22 +1698,45 @@ export default function MockupGenerator({
               </div>
 
               <div className="part-selection-stack">
-                {template.colorParts.map((part) => {
+                {template.colorParts.map((part, partIndex) => {
                   const selectedPantone = resolveColorOption(
                     template.pantoneOptions,
                     partPantones[part.id] || ""
                   );
+                  const partNumber = getPartNumberText(part.label, Math.max(partIndex, 0));
+                  const isFocusedPart = activePartId === part.id;
+                  const isMutedPart = Boolean(activePartId) && !isFocusedPart;
 
                   return (
-                    <div key={part.id} className="part-selection-card">
+                    <div
+                      key={part.id}
+                      ref={(node) => {
+                        partCardRefs.current[partIndex] = node;
+                      }}
+                      className={`part-selection-card${isFocusedPart ? " is-focused" : ""}${isMutedPart ? " is-muted" : ""}`}
+                      onClick={() => setFocusedPartId(part.id)}
+                      onPointerEnter={() => setFocusedPartId(part.id)}
+                      onFocusCapture={() => setFocusedPartId(part.id)}
+                    >
                       <div className="part-selection-head">
-                        <div>
-                          <label className="control-label" htmlFor={`part-${part.id}`}>
-                            {part.label} Pantone color
-                          </label>
+                        <div className="part-selection-copy">
+                          <div className="part-selection-title-row">
+                            <span className="part-index-badge" aria-hidden="true">
+                              {partNumber}
+                            </span>
+                            <label className="control-label" htmlFor={`part-${part.id}`}>
+                              {part.label} Pantone color
+                            </label>
+                          </div>
                           <p className="fine-print">{part.description}</p>
                           {part.instructionCue ? (
                             <p className="fine-print">Instruction cue: {part.instructionCue}</p>
+                          ) : null}
+                          {part.indicatorAnchors?.length ? (
+                            <p className="fine-print">
+                              {part.indicatorAnchors.length} location
+                              {part.indicatorAnchors.length > 1 ? "s" : ""} on preview
+                            </p>
                           ) : null}
                         </div>
                         <button
@@ -1515,9 +1745,10 @@ export default function MockupGenerator({
                           className="pantone-trigger"
                           aria-label={`${part.label} Pantone color`}
                           aria-expanded={openPartId === part.id}
-                          onClick={() =>
-                            setOpenPartId((current) => (current === part.id ? null : part.id))
-                          }
+                          onClick={() => {
+                            setFocusedPartId(part.id);
+                            setOpenPartId((current) => (current === part.id ? null : part.id));
+                          }}
                         >
                           {selectedPantone ? (
                             <>
@@ -1540,12 +1771,13 @@ export default function MockupGenerator({
                             key={`${part.id}-${option.code}`}
                             type="button"
                             className={`quick-color-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
-                            onClick={() =>
+                            onClick={() => {
+                              setFocusedPartId(part.id);
                               setPartPantones((current) => ({
                                 ...current,
                                 [part.id]: option.code
-                              }))
-                            }
+                              }));
+                            }}
                           >
                             <span
                               className="color-swatch"
@@ -1581,6 +1813,7 @@ export default function MockupGenerator({
                                 type="button"
                                 className={`pantone-option-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
                                 onClick={() => {
+                                  setFocusedPartId(part.id);
                                   setPartPantones((current) => ({
                                     ...current,
                                     [part.id]: option.code

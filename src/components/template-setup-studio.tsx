@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useMemo, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
-import type { ProductColorPart, ProductSpecification, TemplatePublicDto } from "@/lib/types";
+import type {
+  PartIndicatorAnchor,
+  ProductColorPart,
+  ProductSpecification,
+  TemplatePublicDto
+} from "@/lib/types";
 
 type EditorFormState = {
   originalSlug: string;
@@ -30,7 +35,18 @@ function createDraftPart(index: number): ProductColorPart {
     description: `Color-controlled region ${index}.`,
     instructionCue: "",
     instructionColorHex: "",
-    defaultPantoneCode: "Pantone Black C"
+    defaultPantoneCode: "Pantone Black C",
+    indicatorAnchors: [createDraftIndicatorAnchor(index, 1)]
+  };
+}
+
+function createDraftIndicatorAnchor(partIndex: number, anchorIndex: number): PartIndicatorAnchor {
+  return {
+    id: `part-${partIndex}-indicator-${anchorIndex}-${Math.random().toString(36).slice(2, 8)}`,
+    targetXPercent: 50,
+    targetYPercent: 50,
+    labelOffsetXPercent: anchorIndex % 2 === 1 ? 18 : -18,
+    labelOffsetYPercent: -12
   };
 }
 
@@ -74,12 +90,28 @@ function buildFormStateFromTemplate(template: TemplatePublicDto): EditorFormStat
     size: template.size || "",
     specifications:
       template.specifications?.length ? template.specifications : [{ label: "", value: "" }],
-    colorParts: template.colorParts.length ? template.colorParts : makeBlankFormState().colorParts,
+    colorParts: template.colorParts.length
+      ? template.colorParts.map((part, index) => ({
+          ...part,
+          indicatorAnchors:
+            part.indicatorAnchors?.length
+              ? part.indicatorAnchors
+              : [createDraftIndicatorAnchor(index + 1, 1)]
+        }))
+      : makeBlankFormState().colorParts,
     baseImageUrl: template.baseImageUrl,
     instructionImageUrl: template.instructionImageUrl,
     baseImageFile: null,
     instructionImageFile: null
   };
+}
+
+function updatePartAtIndex(
+  colorParts: ProductColorPart[],
+  index: number,
+  updater: (part: ProductColorPart) => ProductColorPart
+) {
+  return colorParts.map((item, itemIndex) => (itemIndex === index ? updater(item) : item));
 }
 
 export default function TemplateSetupStudio({
@@ -498,6 +530,220 @@ export default function TemplateSetupStudio({
                           placeholder="#1450FF"
                         />
                       </label>
+                    </div>
+
+                    <div className="setup-subsection">
+                      <div className="setup-subsection-head">
+                        <div>
+                          <span className="control-label">Part indicators</span>
+                          <p className="fine-print">
+                            Add 1 to 3 arrow targets for the big preview image. Use percentages so
+                            the callouts stay aligned responsively.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="secondary-link-button"
+                          disabled={(part.indicatorAnchors?.length || 0) >= 3}
+                          onClick={() =>
+                            setFormState((current) => ({
+                              ...current,
+                              colorParts: updatePartAtIndex(current.colorParts, index, (item) => ({
+                                ...item,
+                                indicatorAnchors: [
+                                  ...(item.indicatorAnchors || []),
+                                  createDraftIndicatorAnchor(
+                                    index + 1,
+                                    (item.indicatorAnchors?.length || 0) + 1
+                                  )
+                                ]
+                              }))
+                            }))
+                          }
+                        >
+                          Add indicator
+                        </button>
+                      </div>
+
+                      <div className="indicator-anchor-stack">
+                        {(part.indicatorAnchors || []).map((anchor, anchorIndex) => (
+                          <div key={anchor.id} className="indicator-anchor-card">
+                            <div className="indicator-anchor-head">
+                              <p className="indicator-anchor-title">
+                                Indicator {anchorIndex + 1}
+                              </p>
+                              <button
+                                type="button"
+                                className="secondary-link-button"
+                                disabled={(part.indicatorAnchors?.length || 0) <= 1}
+                                onClick={() =>
+                                  setFormState((current) => ({
+                                    ...current,
+                                    colorParts: updatePartAtIndex(
+                                      current.colorParts,
+                                      index,
+                                      (item) => ({
+                                        ...item,
+                                        indicatorAnchors:
+                                          (item.indicatorAnchors || []).length > 1
+                                            ? (item.indicatorAnchors || []).filter(
+                                                (_, itemAnchorIndex) =>
+                                                  itemAnchorIndex !== anchorIndex
+                                              )
+                                            : item.indicatorAnchors
+                                      })
+                                    )
+                                  }))
+                                }
+                              >
+                                Remove
+                              </button>
+                            </div>
+
+                            <div className="field-grid indicator-anchor-grid">
+                              <label className="setup-field">
+                                <span className="control-label">Target X %</span>
+                                <input
+                                  className="input-shell"
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.1"
+                                  value={anchor.targetXPercent}
+                                  onChange={(event) =>
+                                    setFormState((current) => ({
+                                      ...current,
+                                      colorParts: updatePartAtIndex(
+                                        current.colorParts,
+                                        index,
+                                        (item) => ({
+                                          ...item,
+                                          indicatorAnchors: (item.indicatorAnchors || []).map(
+                                            (itemAnchor, itemAnchorIndex) =>
+                                              itemAnchorIndex === anchorIndex
+                                                ? {
+                                                    ...itemAnchor,
+                                                    targetXPercent: Number(
+                                                      event.target.value || 0
+                                                    )
+                                                  }
+                                                : itemAnchor
+                                          )
+                                        })
+                                      )
+                                    }))
+                                  }
+                                />
+                              </label>
+
+                              <label className="setup-field">
+                                <span className="control-label">Target Y %</span>
+                                <input
+                                  className="input-shell"
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.1"
+                                  value={anchor.targetYPercent}
+                                  onChange={(event) =>
+                                    setFormState((current) => ({
+                                      ...current,
+                                      colorParts: updatePartAtIndex(
+                                        current.colorParts,
+                                        index,
+                                        (item) => ({
+                                          ...item,
+                                          indicatorAnchors: (item.indicatorAnchors || []).map(
+                                            (itemAnchor, itemAnchorIndex) =>
+                                              itemAnchorIndex === anchorIndex
+                                                ? {
+                                                    ...itemAnchor,
+                                                    targetYPercent: Number(
+                                                      event.target.value || 0
+                                                    )
+                                                  }
+                                                : itemAnchor
+                                          )
+                                        })
+                                      )
+                                    }))
+                                  }
+                                />
+                              </label>
+
+                              <label className="setup-field">
+                                <span className="control-label">Label offset X %</span>
+                                <input
+                                  className="input-shell"
+                                  type="number"
+                                  min="-100"
+                                  max="100"
+                                  step="0.1"
+                                  value={anchor.labelOffsetXPercent}
+                                  onChange={(event) =>
+                                    setFormState((current) => ({
+                                      ...current,
+                                      colorParts: updatePartAtIndex(
+                                        current.colorParts,
+                                        index,
+                                        (item) => ({
+                                          ...item,
+                                          indicatorAnchors: (item.indicatorAnchors || []).map(
+                                            (itemAnchor, itemAnchorIndex) =>
+                                              itemAnchorIndex === anchorIndex
+                                                ? {
+                                                    ...itemAnchor,
+                                                    labelOffsetXPercent: Number(
+                                                      event.target.value || 0
+                                                    )
+                                                  }
+                                                : itemAnchor
+                                          )
+                                        })
+                                      )
+                                    }))
+                                  }
+                                />
+                              </label>
+
+                              <label className="setup-field">
+                                <span className="control-label">Label offset Y %</span>
+                                <input
+                                  className="input-shell"
+                                  type="number"
+                                  min="-100"
+                                  max="100"
+                                  step="0.1"
+                                  value={anchor.labelOffsetYPercent}
+                                  onChange={(event) =>
+                                    setFormState((current) => ({
+                                      ...current,
+                                      colorParts: updatePartAtIndex(
+                                        current.colorParts,
+                                        index,
+                                        (item) => ({
+                                          ...item,
+                                          indicatorAnchors: (item.indicatorAnchors || []).map(
+                                            (itemAnchor, itemAnchorIndex) =>
+                                              itemAnchorIndex === anchorIndex
+                                                ? {
+                                                    ...itemAnchor,
+                                                    labelOffsetYPercent: Number(
+                                                      event.target.value || 0
+                                                    )
+                                                  }
+                                                : itemAnchor
+                                          )
+                                        })
+                                      )
+                                    }))
+                                  }
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <button

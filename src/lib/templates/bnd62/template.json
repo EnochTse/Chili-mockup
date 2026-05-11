@@ -33,7 +33,23 @@
       "description": "Top and lower barrel",
       "instructionCue": "Blue Top and lower barrel",
       "instructionColorHex": "#ff0000",
-      "defaultPantoneCode": "Pantone Black C"
+      "defaultPantoneCode": "Pantone Black C",
+      "indicatorAnchors": [
+        {
+          "id": "part-1-indicator-1",
+          "targetXPercent": 50,
+          "targetYPercent": 25,
+          "labelOffsetXPercent": -18,
+          "labelOffsetYPercent": -10
+        },
+        {
+          "id": "part-1-indicator-2",
+          "targetXPercent": 50,
+          "targetYPercent": 68,
+          "labelOffsetXPercent": 18,
+          "labelOffsetYPercent": -6
+        }
+      ]
     },
     {
       "id": "part-2-3ckhru",
@@ -41,14 +57,32 @@
       "description": "Pen clip",
       "instructionCue": "Red",
       "instructionColorHex": "#005aff",
-      "defaultPantoneCode": "Pantone Black C"
+      "defaultPantoneCode": "Pantone Black C",
+      "indicatorAnchors": [
+        {
+          "id": "part-2-indicator-1",
+          "targetXPercent": 50,
+          "targetYPercent": 37,
+          "labelOffsetXPercent": 20,
+          "labelOffsetYPercent": -14
+        }
+      ]
     },
     {
       "id": "part-3-tzd2o2",
       "label": "Part 3",
       "description": "Top accessory",
       "instructionColorHex": "#fff600",
-      "defaultPantoneCode": "Pantone Black C"
+      "defaultPantoneCode": "Pantone Black C",
+      "indicatorAnchors": [
+        {
+          "id": "part-3-indicator-1",
+          "targetXPercent": 50,
+          "targetYPercent": 10,
+          "labelOffsetXPercent": 16,
+          "labelOffsetYPercent": -8
+        }
+      ]
     }
   ],
   "logoPlacement": {
