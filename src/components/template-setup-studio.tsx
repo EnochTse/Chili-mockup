@@ -129,6 +129,41 @@ function canSaveTemplateInCurrentEnvironment() {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
+function buildIndicatorExportPayload(formState: EditorFormState) {
+  return {
+    slug: formState.slug,
+    name: formState.name,
+    colorParts: formState.colorParts.map((part) => ({
+      id: part.id,
+      label: part.label,
+      indicatorAnchors: part.indicatorAnchors || []
+    }))
+  };
+}
+
+async function copyTextToClipboard(text: string) {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  throw new Error("Clipboard is not available in this browser.");
+}
+
+function downloadJsonFile(fileName: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json"
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 function useResolvedAssetPreview(file: File | null, fallbackUrl: string) {
   const [previewUrl, setPreviewUrl] = useState(fallbackUrl);
 
@@ -404,11 +439,66 @@ export default function TemplateSetupStudio({
     setSaveMessage(null);
   }
 
+  async function handleCopyAllIndicators() {
+    try {
+      await copyTextToClipboard(
+        JSON.stringify(buildIndicatorExportPayload(formState), null, 2)
+      );
+      setSaveError(null);
+      setSaveMessage("Indicator JSON copied to clipboard.");
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to copy indicator JSON."
+      );
+      setSaveMessage(null);
+    }
+  }
+
+  async function handleCopyPartIndicators(part: ProductColorPart) {
+    try {
+      await copyTextToClipboard(
+        JSON.stringify(
+          {
+            id: part.id,
+            label: part.label,
+            indicatorAnchors: part.indicatorAnchors || []
+          },
+          null,
+          2
+        )
+      );
+      setSaveError(null);
+      setSaveMessage(`${part.label} indicator JSON copied.`);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to copy part indicator JSON."
+      );
+      setSaveMessage(null);
+    }
+  }
+
+  function handleExportIndicators() {
+    try {
+      const safeSlug = slugify(formState.slug || formState.name || "product");
+      downloadJsonFile(
+        `${safeSlug || "product"}-indicator-positions.json`,
+        buildIndicatorExportPayload(formState)
+      );
+      setSaveError(null);
+      setSaveMessage("Indicator JSON exported.");
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to export indicator JSON."
+      );
+      setSaveMessage(null);
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSaveTemplate) {
       setSaveError(
-        "Netlify branch deploy 只能預覽 setup studio，不能直接寫回 template 檔案。請在本機 localhost 開啟這個專案後再按 Save template。"
+        "This Netlify setup page is preview-only. To save template files back into the repo, open Setup studio on local localhost."
       );
       setSaveMessage(null);
       return;
@@ -452,11 +542,11 @@ export default function TemplateSetupStudio({
         } catch {
           if (responseText.trim().startsWith("<")) {
             throw new Error(
-              "目前這個部署環境沒有 template save API。Netlify branch deploy 只能預覽，不能直接儲存到 repo。請改在本機 localhost 使用 Setup studio。"
+              "This deployment does not expose the template save API. Netlify branch deploy can preview indicator editing, but saving to the repo works on local localhost only."
             );
           }
 
-          throw new Error("Save template 回傳了非 JSON 內容，請稍後再試。");
+          throw new Error("Save template returned non-JSON content. Please try again.");
         }
       }
 
@@ -549,6 +639,22 @@ export default function TemplateSetupStudio({
                 This Netlify setup page is preview-only. Save template works on local localhost.
               </p>
             ) : null}
+            <div className="setup-inline-actions">
+              <button
+                type="button"
+                className="secondary-link-button"
+                onClick={handleCopyAllIndicators}
+              >
+                Copy indicator JSON
+              </button>
+              <button
+                type="button"
+                className="secondary-link-button"
+                onClick={handleExportIndicators}
+              >
+                Export indicators JSON
+              </button>
+            </div>
           </div>
 
           <form className="setup-form" onSubmit={handleSubmit}>
@@ -822,28 +928,37 @@ export default function TemplateSetupStudio({
                             the callouts stay aligned responsively.
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          className="secondary-link-button"
-                          disabled={(part.indicatorAnchors?.length || 0) >= 3}
-                          onClick={() =>
-                            setFormState((current) => ({
-                              ...current,
-                              colorParts: updatePartAtIndex(current.colorParts, index, (item) => ({
-                                ...item,
-                                indicatorAnchors: [
-                                  ...(item.indicatorAnchors || []),
-                                  createDraftIndicatorAnchor(
-                                    index + 1,
-                                    (item.indicatorAnchors?.length || 0) + 1
-                                  )
-                                ]
+                        <div className="setup-inline-actions">
+                          <button
+                            type="button"
+                            className="secondary-link-button"
+                            onClick={() => handleCopyPartIndicators(part)}
+                          >
+                            Copy part JSON
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-link-button"
+                            disabled={(part.indicatorAnchors?.length || 0) >= 3}
+                            onClick={() =>
+                              setFormState((current) => ({
+                                ...current,
+                                colorParts: updatePartAtIndex(current.colorParts, index, (item) => ({
+                                  ...item,
+                                  indicatorAnchors: [
+                                    ...(item.indicatorAnchors || []),
+                                    createDraftIndicatorAnchor(
+                                      index + 1,
+                                      (item.indicatorAnchors?.length || 0) + 1
+                                    )
+                                  ]
+                                }))
                               }))
-                            }))
-                          }
-                        >
-                          Add indicator
-                        </button>
+                            }
+                          >
+                            Add indicator
+                          </button>
+                        </div>
                       </div>
 
                       <PartIndicatorVisualEditor
