@@ -771,7 +771,7 @@ export default function MockupGenerator({
   const renderPanelRef = useRef<HTMLElement | null>(null);
   const formPanelRef = useRef<HTMLElement | null>(null);
   const renderPreviewShellRef = useRef<HTMLDivElement | null>(null);
-  const partCardRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const formSectionRefs = useRef<Array<HTMLElement | null>>([]);
 
   const showDebug =
     process.env.NODE_ENV === "development" ||
@@ -933,26 +933,27 @@ export default function MockupGenerator({
             );
           }
 
-          const partCards = partCardRefs.current.filter(
-            (card): card is HTMLDivElement => Boolean(card)
+          const formSections = formSectionRefs.current.filter(
+            (section): section is HTMLElement => Boolean(section)
           );
 
-          if (partCards.length) {
-            gsap.fromTo(
-              partCards,
-              { autoAlpha: 0, y: 18 },
-              {
-                autoAlpha: 1,
-                y: 0,
-                duration: 0.3,
-                ease: "power2.out",
-                stagger: 0.06,
-                scrollTrigger: {
-                  trigger: formPanelRef.current || partCards[0],
-                  start: "top 80%"
+          if (formSections.length) {
+            formSections.forEach((section, index) => {
+              gsap.fromTo(
+                section,
+                { autoAlpha: index === 0 ? 1 : 0.35, y: index === 0 ? 0 : 28 },
+                {
+                  autoAlpha: 1,
+                  y: 0,
+                  duration: 0.45,
+                  ease: "power2.out",
+                  scrollTrigger: {
+                    trigger: section,
+                    start: "top 82%"
+                  }
                 }
-              }
-            );
+              );
+            });
           }
         });
 
@@ -1726,7 +1727,12 @@ export default function MockupGenerator({
               </div>
 
               <form className="generator-form" onSubmit={handleSubmit}>
-                <section className="form-section">
+                <section
+                  className="form-section"
+                  ref={(node) => {
+                    formSectionRefs.current[0] = node;
+                  }}
+                >
                   <div className="form-section-head">
                     <div>
                       <p className="panel-kicker">Step 1</p>
@@ -1770,9 +1776,6 @@ export default function MockupGenerator({
                       return (
                         <div
                           key={part.id}
-                          ref={(node) => {
-                            partCardRefs.current[partIndex] = node;
-                          }}
                           className={`part-selection-card${isFocusedPart ? " is-focused" : ""}${isMutedPart ? " is-muted" : ""}`}
                           onClick={() => setFocusedPartId(part.id)}
                           onPointerEnter={() => setFocusedPartId(part.id)}
@@ -1914,7 +1917,12 @@ export default function MockupGenerator({
                   </div>
                 </section>
 
-                <section className="form-section">
+                <section
+                  className="form-section"
+                  ref={(node) => {
+                    formSectionRefs.current[1] = node;
+                  }}
+                >
                   <div className="form-section-head">
                     <div>
                       <p className="panel-kicker">Step 2</p>
@@ -2018,7 +2026,12 @@ export default function MockupGenerator({
                   </div>
                 </section>
 
-                <section className="form-section form-submit-section">
+                <section
+                  className="form-section form-submit-section"
+                  ref={(node) => {
+                    formSectionRefs.current[2] = node;
+                  }}
+                >
                   <div className="form-section-head">
                     <div>
                       <p className="panel-kicker">Step 3</p>

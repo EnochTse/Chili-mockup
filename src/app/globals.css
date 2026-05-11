@@ -332,8 +332,8 @@ summary:focus-visible {
 
 .workflow-grid {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(320px, 0.95fr);
-  gap: var(--spacing-32);
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 360px);
+  gap: clamp(32px, 4vw, 72px);
   align-items: start;
 }
 
@@ -341,6 +341,7 @@ summary:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-24);
+  align-self: start;
   min-width: 0;
 }
 
@@ -571,6 +572,7 @@ summary:focus-visible {
   color: var(--color-gravel);
   font-size: 13px;
   line-height: 1.6;
+  max-width: 30ch;
 }
 
 .workflow-strip {
@@ -763,8 +765,7 @@ summary:focus-visible {
 }
 
 .form-panel {
-  position: sticky;
-  top: var(--spacing-24);
+  position: relative;
   align-self: start;
   padding: 0;
   background: transparent;
@@ -773,10 +774,12 @@ summary:focus-visible {
 }
 
 .config-panel-shell {
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100vh - 48px);
-  overflow: hidden;
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
 }
 
 .form-heading {
@@ -787,13 +790,15 @@ summary:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 0;
-  overflow-y: auto;
-  scroll-snap-type: y proximity;
+  overflow: visible;
+  scroll-snap-type: none;
 }
 
 .config-panel-head {
   display: grid;
-  gap: var(--spacing-16);
+  gap: var(--spacing-12);
+  padding: 0 0 var(--spacing-24);
+  border-bottom: 0;
 }
 
 .config-status-block {
@@ -826,22 +831,21 @@ summary:focus-visible {
 .form-section {
   display: grid;
   gap: var(--spacing-16);
-  min-height: min(78vh, 760px);
-  padding: 42px 32px;
-  border-top: 1px solid rgba(15, 16, 18, 0.08);
-  scroll-snap-align: start;
+  min-height: min(72vh, 760px);
+  padding: 0 0 min(18vh, 180px);
+  border-top: 0;
   align-content: start;
 }
 
-.form-section:first-of-type {
-  border-top: 0;
+.form-section + .form-section {
+  padding-top: min(10vh, 96px);
 }
 
 .form-section-head {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: var(--spacing-16);
+  display: grid;
+  gap: var(--spacing-12);
+  align-items: start;
+  justify-content: start;
 }
 
 .form-submit-section {
@@ -1200,39 +1204,33 @@ input[type="file"].input-shell::file-selector-button {
 .part-selection-stack {
   display: flex;
   flex-direction: column;
-  gap: 30px;
+  gap: clamp(40px, 9vh, 112px);
 }
 
 .part-selection-card {
   display: flex;
   flex-direction: column;
   gap: 22px;
-  padding: 30px;
+  padding: 28px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: #ffffff;
   box-shadow: var(--shadow-card);
-  transform-origin: center right;
   transition:
-    transform var(--motion-base) var(--motion-ease),
-    opacity var(--motion-fast) ease,
     border-color var(--motion-fast) ease,
     background-color var(--motion-fast) ease,
     box-shadow var(--motion-fast) ease,
-    filter var(--motion-base) var(--motion-ease);
+    opacity var(--motion-fast) ease;
 }
 
 .part-selection-card.is-focused {
   border-color: rgba(15, 16, 18, 0.14);
   background: #ffffff;
   box-shadow: 0 18px 36px rgba(15, 16, 18, 0.07);
-  transform: translateY(-1px) scale(1);
 }
 
 .part-selection-card.is-muted {
-  opacity: 0.76;
-  filter: grayscale(0.45);
-  transform: scale(0.975);
+  opacity: 0.62;
 }
 
 .part-selection-card.is-muted .control-label,
@@ -1500,7 +1498,10 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .render-panel {
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-20);
+  overflow: visible;
 }
 
 .render-stage {
@@ -1508,13 +1509,20 @@ input[type="file"].input-shell::file-selector-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 820px;
+  min-height: clamp(620px, 82vh, 900px);
   padding: 108px var(--spacing-40) var(--spacing-40);
   border: 1px solid rgba(15, 16, 18, 0.06);
   border-radius: 32px;
   background:
     radial-gradient(circle at top center, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0) 40%),
     linear-gradient(180deg, #fbfbfc 0%, #f1f1f3 100%);
+}
+
+@media (min-width: 981px) {
+  .render-stage {
+    position: sticky;
+    top: var(--spacing-24);
+  }
 }
 
 .render-preview-shell {
@@ -1982,21 +1990,28 @@ input[type="file"].input-shell::file-selector-button {
     position: static;
   }
 
-  .config-panel-shell {
-    max-height: none;
-  }
-
-  .generator-form {
-    overflow: visible;
-    scroll-snap-type: none;
-  }
-
   .form-section {
     min-height: auto;
+    padding-bottom: 56px;
+  }
+
+  .form-section + .form-section {
+    padding-top: 48px;
+  }
+
+  .render-panel {
+    gap: var(--spacing-16);
+  }
+
+  .part-selection-stack {
+    gap: 32px;
   }
 
   .render-stage {
-    min-height: 620px;
+    position: relative;
+    top: auto;
+    min-height: auto;
+    padding: 88px var(--spacing-24) var(--spacing-24);
   }
 
   .instruction-modal-body {
@@ -2067,6 +2082,10 @@ input[type="file"].input-shell::file-selector-button {
     grid-template-columns: 1fr;
   }
 
+  .part-selection-stack {
+    gap: 28px;
+  }
+
   .logo-slider-row {
     grid-template-columns: 64px minmax(0, 1fr) 54px;
   }
@@ -2081,8 +2100,7 @@ input[type="file"].input-shell::file-selector-button {
   }
 
   .render-stage {
-    min-height: 440px;
-    padding: 110px var(--spacing-16) var(--spacing-16);
+    padding: 84px var(--spacing-16) var(--spacing-16);
   }
 
   .render-stage-toolbar,
@@ -2133,6 +2151,14 @@ input[type="file"].input-shell::file-selector-button {
   .instruction-modal-head,
   .instruction-modal-body {
     padding: var(--spacing-16);
+  }
+
+  .form-section {
+    padding-bottom: 40px;
+  }
+
+  .form-section + .form-section {
+    padding-top: 36px;
   }
 }
 
