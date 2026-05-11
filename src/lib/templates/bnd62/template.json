@@ -34,22 +34,26 @@
       "instructionCue": "Blue Top and lower barrel",
       "instructionColorHex": "#ff0000",
       "defaultPantoneCode": "Pantone Black C",
-      "allowedFinishes": ["matte", "glossy", "rubber"],
+      "allowedFinishes": [
+        "matte",
+        "glossy",
+        "rubber"
+      ],
       "defaultFinish": "matte",
       "indicatorAnchors": [
         {
           "id": "part-1-indicator-1",
-          "targetXPercent": 50,
-          "targetYPercent": 25,
-          "labelOffsetXPercent": -18,
-          "labelOffsetYPercent": -10
+          "targetXPercent": 52.8,
+          "targetYPercent": 27.8,
+          "labelOffsetXPercent": 21.7,
+          "labelOffsetYPercent": -12.4
         },
         {
           "id": "part-1-indicator-2",
-          "targetXPercent": 50,
-          "targetYPercent": 68,
-          "labelOffsetXPercent": 18,
-          "labelOffsetYPercent": -6
+          "targetXPercent": 53.1,
+          "targetYPercent": 65.8,
+          "labelOffsetXPercent": 21.3,
+          "labelOffsetYPercent": -12
         }
       ]
     },
@@ -60,15 +64,19 @@
       "instructionCue": "Red",
       "instructionColorHex": "#005aff",
       "defaultPantoneCode": "Pantone Black C",
-      "allowedFinishes": ["matte", "glossy", "metallic"],
+      "allowedFinishes": [
+        "matte",
+        "glossy",
+        "metallic"
+      ],
       "defaultFinish": "metallic",
       "indicatorAnchors": [
         {
           "id": "part-2-indicator-1",
-          "targetXPercent": 50,
-          "targetYPercent": 37,
-          "labelOffsetXPercent": 20,
-          "labelOffsetYPercent": -14
+          "targetXPercent": 48.1,
+          "targetYPercent": 29.3,
+          "labelOffsetXPercent": -19.3,
+          "labelOffsetYPercent": -14.7
         }
       ]
     },
@@ -78,15 +86,19 @@
       "description": "Top accessory",
       "instructionColorHex": "#fff600",
       "defaultPantoneCode": "Pantone Black C",
-      "allowedFinishes": ["matte", "glossy", "metallic"],
+      "allowedFinishes": [
+        "matte",
+        "glossy",
+        "metallic"
+      ],
       "defaultFinish": "glossy",
       "indicatorAnchors": [
         {
           "id": "part-3-indicator-1",
-          "targetXPercent": 50,
-          "targetYPercent": 10,
-          "labelOffsetXPercent": 16,
-          "labelOffsetYPercent": -8
+          "targetXPercent": 48.7,
+          "targetYPercent": 12.5,
+          "labelOffsetXPercent": -14,
+          "labelOffsetYPercent": -4
         }
       ]
     }
