@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { startTransition, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
 import type {
   PartIndicatorAnchor,
@@ -114,6 +114,224 @@ function updatePartAtIndex(
   return colorParts.map((item, itemIndex) => (itemIndex === index ? updater(item) : item));
 }
 
+function clampPercent(value: number, min = 0, max = 100) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundToSingleDecimal(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function useResolvedAssetPreview(file: File | null, fallbackUrl: string) {
+  const [previewUrl, setPreviewUrl] = useState(fallbackUrl);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(fallbackUrl);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file, fallbackUrl]);
+
+  return previewUrl;
+}
+
+function PartIndicatorVisualEditor({
+  part,
+  previewImageUrl,
+  onAnchorChange
+}: {
+  part: ProductColorPart;
+  previewImageUrl: string;
+  onAnchorChange: (anchorIndex: number, next: Partial<PartIndicatorAnchor>) => void;
+}) {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
+  const [activeAnchorId, setActiveAnchorId] = useState<string | null>(
+    part.indicatorAnchors?.[0]?.id || null
+  );
+  const [dragState, setDragState] = useState<{
+    anchorIndex: number;
+    pointerId: number;
+    mode: "target" | "label";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!part.indicatorAnchors?.length) {
+      setActiveAnchorId(null);
+      return;
+    }
+
+    const hasActiveAnchor = part.indicatorAnchors.some((anchor) => anchor.id === activeAnchorId);
+    if (!hasActiveAnchor) {
+      setActiveAnchorId(part.indicatorAnchors[0].id);
+    }
+  }, [activeAnchorId, part.indicatorAnchors]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || typeof ResizeObserver === "undefined") return;
+
+    const updateSize = () => {
+      const bounds = frame.getBoundingClientRect();
+      setFrameSize({
+        width: bounds.width,
+        height: bounds.height
+      });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [previewImageUrl]);
+
+  useEffect(() => {
+    if (!dragState) return;
+    const currentDragState = dragState;
+
+    function handlePointerMove(event: PointerEvent) {
+      if (event.pointerId !== currentDragState.pointerId) return;
+
+      const frame = frameRef.current;
+      const anchor = part.indicatorAnchors?.[currentDragState.anchorIndex];
+      if (!frame || !anchor) return;
+
+      const bounds = frame.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) return;
+
+      const pointerXPercent = clampPercent(((event.clientX - bounds.left) / bounds.width) * 100);
+      const pointerYPercent = clampPercent(((event.clientY - bounds.top) / bounds.height) * 100);
+
+      if (currentDragState.mode === "target") {
+        onAnchorChange(currentDragState.anchorIndex, {
+          targetXPercent: roundToSingleDecimal(pointerXPercent),
+          targetYPercent: roundToSingleDecimal(pointerYPercent)
+        });
+      } else {
+        onAnchorChange(currentDragState.anchorIndex, {
+          labelOffsetXPercent: roundToSingleDecimal(pointerXPercent - anchor.targetXPercent),
+          labelOffsetYPercent: roundToSingleDecimal(pointerYPercent - anchor.targetYPercent)
+        });
+      }
+    }
+
+    function handlePointerUp(event: PointerEvent) {
+      if (event.pointerId === currentDragState.pointerId) {
+        setDragState(null);
+      }
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [dragState, onAnchorChange, part.indicatorAnchors]);
+
+  if (!previewImageUrl) {
+    return (
+      <div className="indicator-visual-empty">
+        Upload or keep a product image to enable direct indicator positioning.
+      </div>
+    );
+  }
+
+  return (
+    <div className="indicator-visual-editor">
+      <div className="indicator-visual-head">
+        <p className="fine-print">
+          Drag the dot to place the target. Drag the pill label to place the callout.
+        </p>
+      </div>
+      <div className="indicator-visual-frame" ref={frameRef}>
+        <img src={previewImageUrl} alt={`${part.label} indicator preview`} />
+        <div className="indicator-visual-overlay">
+          {(part.indicatorAnchors || []).map((anchor, anchorIndex) => {
+            const labelXPercent = clampPercent(
+              anchor.targetXPercent + anchor.labelOffsetXPercent
+            );
+            const labelYPercent = clampPercent(
+              anchor.targetYPercent + anchor.labelOffsetYPercent
+            );
+            const targetX = (frameSize.width * anchor.targetXPercent) / 100;
+            const targetY = (frameSize.height * anchor.targetYPercent) / 100;
+            const labelX = (frameSize.width * labelXPercent) / 100;
+            const labelY = (frameSize.height * labelYPercent) / 100;
+            const deltaX = targetX - labelX;
+            const deltaY = targetY - labelY;
+            const isActive = activeAnchorId === anchor.id;
+
+            return (
+              <div
+                key={anchor.id}
+                className={`indicator-visual-anchor${isActive ? " is-active" : ""}`}
+                onPointerDown={() => setActiveAnchorId(anchor.id)}
+              >
+                <div
+                  className="indicator-visual-line"
+                  style={{
+                    left: `${labelX}px`,
+                    top: `${labelY}px`,
+                    width: `${Math.hypot(deltaX, deltaY)}px`,
+                    transform: `translateY(-50%) rotate(${(Math.atan2(deltaY, deltaX) * 180) / Math.PI}deg)`
+                  }}
+                />
+                <button
+                  type="button"
+                  className="indicator-visual-target"
+                  style={{
+                    left: `${anchor.targetXPercent}%`,
+                    top: `${anchor.targetYPercent}%`
+                  }}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setActiveAnchorId(anchor.id);
+                    setDragState({
+                      anchorIndex,
+                      pointerId: event.pointerId,
+                      mode: "target"
+                    });
+                  }}
+                  aria-label={`Drag target for ${part.label} indicator ${anchorIndex + 1}`}
+                />
+                <button
+                  type="button"
+                  className="indicator-visual-label"
+                  style={{
+                    left: `${labelXPercent}%`,
+                    top: `${labelYPercent}%`
+                  }}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setActiveAnchorId(anchor.id);
+                    setDragState({
+                      anchorIndex,
+                      pointerId: event.pointerId,
+                      mode: "label"
+                    });
+                  }}
+                >
+                  <span className="indicator-visual-label-number">{anchorIndex + 1}</span>
+                  <span className="indicator-visual-label-copy">Drag callout</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TemplateSetupStudio({
   initialTemplates
 }: {
@@ -130,12 +348,36 @@ export default function TemplateSetupStudio({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const baseImagePreviewUrl = useResolvedAssetPreview(
+    formState.baseImageFile,
+    formState.baseImageUrl
+  );
+  const instructionImagePreviewUrl = useResolvedAssetPreview(
+    formState.instructionImageFile,
+    formState.instructionImageUrl
+  );
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.slug === selectedSlug) || null,
     [selectedSlug, templates]
   );
   const isNewTemplate = selectedSlug === newTemplateKey || !selectedTemplate;
+
+  function updateIndicatorAnchorField(
+    partIndex: number,
+    anchorIndex: number,
+    next: Partial<PartIndicatorAnchor>
+  ) {
+    setFormState((current) => ({
+      ...current,
+      colorParts: updatePartAtIndex(current.colorParts, partIndex, (item) => ({
+        ...item,
+        indicatorAnchors: (item.indicatorAnchors || []).map((itemAnchor, itemAnchorIndex) =>
+          itemAnchorIndex === anchorIndex ? { ...itemAnchor, ...next } : itemAnchor
+        )
+      }))
+    }));
+  }
 
   function selectTemplate(slug: string) {
     if (slug === newTemplateKey) {
@@ -565,6 +807,14 @@ export default function TemplateSetupStudio({
                         </button>
                       </div>
 
+                      <PartIndicatorVisualEditor
+                        part={part}
+                        previewImageUrl={baseImagePreviewUrl}
+                        onAnchorChange={(anchorIndex, next) =>
+                          updateIndicatorAnchorField(index, anchorIndex, next)
+                        }
+                      />
+
                       <div className="indicator-anchor-stack">
                         {(part.indicatorAnchors || []).map((anchor, anchorIndex) => (
                           <div key={anchor.id} className="indicator-anchor-card">
@@ -611,27 +861,9 @@ export default function TemplateSetupStudio({
                                   step="0.1"
                                   value={anchor.targetXPercent}
                                   onChange={(event) =>
-                                    setFormState((current) => ({
-                                      ...current,
-                                      colorParts: updatePartAtIndex(
-                                        current.colorParts,
-                                        index,
-                                        (item) => ({
-                                          ...item,
-                                          indicatorAnchors: (item.indicatorAnchors || []).map(
-                                            (itemAnchor, itemAnchorIndex) =>
-                                              itemAnchorIndex === anchorIndex
-                                                ? {
-                                                    ...itemAnchor,
-                                                    targetXPercent: Number(
-                                                      event.target.value || 0
-                                                    )
-                                                  }
-                                                : itemAnchor
-                                          )
-                                        })
-                                      )
-                                    }))
+                                    updateIndicatorAnchorField(index, anchorIndex, {
+                                      targetXPercent: Number(event.target.value || 0)
+                                    })
                                   }
                                 />
                               </label>
@@ -646,27 +878,9 @@ export default function TemplateSetupStudio({
                                   step="0.1"
                                   value={anchor.targetYPercent}
                                   onChange={(event) =>
-                                    setFormState((current) => ({
-                                      ...current,
-                                      colorParts: updatePartAtIndex(
-                                        current.colorParts,
-                                        index,
-                                        (item) => ({
-                                          ...item,
-                                          indicatorAnchors: (item.indicatorAnchors || []).map(
-                                            (itemAnchor, itemAnchorIndex) =>
-                                              itemAnchorIndex === anchorIndex
-                                                ? {
-                                                    ...itemAnchor,
-                                                    targetYPercent: Number(
-                                                      event.target.value || 0
-                                                    )
-                                                  }
-                                                : itemAnchor
-                                          )
-                                        })
-                                      )
-                                    }))
+                                    updateIndicatorAnchorField(index, anchorIndex, {
+                                      targetYPercent: Number(event.target.value || 0)
+                                    })
                                   }
                                 />
                               </label>
@@ -681,27 +895,9 @@ export default function TemplateSetupStudio({
                                   step="0.1"
                                   value={anchor.labelOffsetXPercent}
                                   onChange={(event) =>
-                                    setFormState((current) => ({
-                                      ...current,
-                                      colorParts: updatePartAtIndex(
-                                        current.colorParts,
-                                        index,
-                                        (item) => ({
-                                          ...item,
-                                          indicatorAnchors: (item.indicatorAnchors || []).map(
-                                            (itemAnchor, itemAnchorIndex) =>
-                                              itemAnchorIndex === anchorIndex
-                                                ? {
-                                                    ...itemAnchor,
-                                                    labelOffsetXPercent: Number(
-                                                      event.target.value || 0
-                                                    )
-                                                  }
-                                                : itemAnchor
-                                          )
-                                        })
-                                      )
-                                    }))
+                                    updateIndicatorAnchorField(index, anchorIndex, {
+                                      labelOffsetXPercent: Number(event.target.value || 0)
+                                    })
                                   }
                                 />
                               </label>
@@ -716,27 +912,9 @@ export default function TemplateSetupStudio({
                                   step="0.1"
                                   value={anchor.labelOffsetYPercent}
                                   onChange={(event) =>
-                                    setFormState((current) => ({
-                                      ...current,
-                                      colorParts: updatePartAtIndex(
-                                        current.colorParts,
-                                        index,
-                                        (item) => ({
-                                          ...item,
-                                          indicatorAnchors: (item.indicatorAnchors || []).map(
-                                            (itemAnchor, itemAnchorIndex) =>
-                                              itemAnchorIndex === anchorIndex
-                                                ? {
-                                                    ...itemAnchor,
-                                                    labelOffsetYPercent: Number(
-                                                      event.target.value || 0
-                                                    )
-                                                  }
-                                                : itemAnchor
-                                          )
-                                        })
-                                      )
-                                    }))
+                                    updateIndicatorAnchorField(index, anchorIndex, {
+                                      labelOffsetYPercent: Number(event.target.value || 0)
+                                    })
                                   }
                                 />
                               </label>
@@ -772,9 +950,9 @@ export default function TemplateSetupStudio({
               <div className="asset-upload-grid">
                 <label className="setup-field">
                   <span className="control-label">Product image</span>
-                  {formState.baseImageUrl ? (
+                  {baseImagePreviewUrl ? (
                     <div className="catalog-image-frame compact-frame">
-                      <img src={formState.baseImageUrl} alt="Current product asset" />
+                      <img src={baseImagePreviewUrl} alt="Current product asset" />
                     </div>
                   ) : null}
                   <input
@@ -795,9 +973,9 @@ export default function TemplateSetupStudio({
 
                 <label className="setup-field">
                   <span className="control-label">Instruction image</span>
-                  {formState.instructionImageUrl ? (
+                  {instructionImagePreviewUrl ? (
                     <div className="catalog-image-frame compact-frame">
-                      <img src={formState.instructionImageUrl} alt="Current instruction asset" />
+                      <img src={instructionImagePreviewUrl} alt="Current instruction asset" />
                     </div>
                   ) : null}
                   <input
