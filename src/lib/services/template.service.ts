@@ -3,6 +3,7 @@ import type { Dirent } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { AppError } from "@/lib/errors";
+import { productFinishOptions } from "@/lib/services/finish-option.service";
 import { loadPantoneLibrary } from "@/lib/services/pantone-library.service";
 import { validateTemplateAsset } from "@/lib/validators/asset.validator";
 import type {
@@ -28,26 +29,40 @@ const productSpecificationSchema = z.object({
   value: z.string().min(1)
 });
 
-const productColorPartSchema = z.object({
-  id: z.string().regex(slugPattern),
-  label: z.string().min(1),
-  description: z.string().min(1),
-  instructionCue: z.string().min(1).optional(),
-  instructionColorHex: z.string().regex(hexColorPattern).optional(),
-  defaultPantoneCode: z.string().min(1).optional(),
-  indicatorAnchors: z
-    .array(
-      z.object({
-        id: z.string().min(1),
-        targetXPercent: z.number().min(0).max(100),
-        targetYPercent: z.number().min(0).max(100),
-        labelOffsetXPercent: z.number().min(-100).max(100),
-        labelOffsetYPercent: z.number().min(-100).max(100)
-      })
-    )
-    .max(3)
-    .optional()
-});
+const productFinishOptionSchema = z.enum(productFinishOptions);
+
+const productColorPartSchema = z
+  .object({
+    id: z.string().regex(slugPattern),
+    label: z.string().min(1),
+    description: z.string().min(1),
+    instructionCue: z.string().min(1).optional(),
+    instructionColorHex: z.string().regex(hexColorPattern).optional(),
+    defaultPantoneCode: z.string().min(1).optional(),
+    allowedFinishes: z.array(productFinishOptionSchema).min(1).optional(),
+    defaultFinish: productFinishOptionSchema.optional(),
+    indicatorAnchors: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          targetXPercent: z.number().min(0).max(100),
+          targetYPercent: z.number().min(0).max(100),
+          labelOffsetXPercent: z.number().min(-100).max(100),
+          labelOffsetYPercent: z.number().min(-100).max(100)
+        })
+      )
+      .max(3)
+      .optional()
+  })
+  .superRefine((part, context) => {
+    if (part.defaultFinish && !part.allowedFinishes?.includes(part.defaultFinish)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "defaultFinish must be one of allowedFinishes.",
+        path: ["defaultFinish"]
+      });
+    }
+  });
 
 const templateSchema = z.object({
   id: z.string().min(1),

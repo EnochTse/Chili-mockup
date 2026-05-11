@@ -34,6 +34,8 @@
       "instructionCue": "Blue lower bottle region",
       "instructionColorHex": "#1450FF",
       "defaultPantoneCode": "Pantone Black C",
+      "allowedFinishes": ["matte", "glossy", "rubber", "metallic"],
+      "defaultFinish": "matte",
       "indicatorAnchors": [
         {
           "id": "part-1-indicator-1",
@@ -51,6 +53,8 @@
       "instructionCue": "Red upper bottle region",
       "instructionColorHex": "#FF1A0A",
       "defaultPantoneCode": "Pantone Black C",
+      "allowedFinishes": ["matte", "glossy", "metallic"],
+      "defaultFinish": "metallic",
       "indicatorAnchors": [
         {
           "id": "part-2-indicator-1",
@@ -68,6 +72,8 @@
       "instructionCue": "Orange handle loop region",
       "instructionColorHex": "#FF9800",
       "defaultPantoneCode": "Pantone Black C",
+      "allowedFinishes": ["matte", "glossy", "rubber"],
+      "defaultFinish": "rubber",
       "indicatorAnchors": [
         {
           "id": "part-3-indicator-1",

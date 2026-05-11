@@ -4,9 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
+import {
+  productFinishLabels,
+  productFinishOptions,
+  resolvePartDefaultFinish
+} from "@/lib/services/finish-option.service";
 import type {
   PartIndicatorAnchor,
   ProductColorPart,
+  ProductFinishOption,
   ProductSpecification,
   TemplatePublicDto
 } from "@/lib/types";
@@ -112,6 +118,25 @@ function updatePartAtIndex(
   updater: (part: ProductColorPart) => ProductColorPart
 ) {
   return colorParts.map((item, itemIndex) => (itemIndex === index ? updater(item) : item));
+}
+
+function toggleFinishOption(
+  part: ProductColorPart,
+  finish: ProductFinishOption
+): ProductColorPart {
+  const current = part.allowedFinishes || [];
+  const nextAllowedFinishes = current.includes(finish)
+    ? current.filter((item) => item !== finish)
+    : [...current, finish];
+
+  return {
+    ...part,
+    allowedFinishes: nextAllowedFinishes.length ? nextAllowedFinishes : undefined,
+    defaultFinish: resolvePartDefaultFinish({
+      allowedFinishes: nextAllowedFinishes,
+      defaultFinish: part.defaultFinish
+    })
+  };
 }
 
 function clampPercent(value: number, min = 0, max = 100) {
@@ -917,6 +942,69 @@ export default function TemplateSetupStudio({
                           placeholder="#1450FF"
                         />
                       </label>
+                    </div>
+
+                    <div className="setup-subsection">
+                      <div className="setup-subsection-head">
+                        <div>
+                          <span className="control-label">Material finish options</span>
+                          <p className="fine-print">
+                            Turn on only the finishes that this exact product part can offer.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="quick-choice-row" aria-label={`${part.label} finish options`}>
+                        {productFinishOptions.map((finish) => {
+                          const isActive = part.allowedFinishes?.includes(finish) || false;
+
+                          return (
+                            <button
+                              key={`${part.id}-${finish}`}
+                              type="button"
+                              className={`quick-choice-button${isActive ? " is-active" : ""}`}
+                              onClick={() =>
+                                setFormState((current) => ({
+                                  ...current,
+                                  colorParts: updatePartAtIndex(current.colorParts, index, (item) =>
+                                    toggleFinishOption(item, finish)
+                                  )
+                                }))
+                              }
+                            >
+                              {productFinishLabels[finish]}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {part.allowedFinishes?.length ? (
+                        <label className="setup-field finish-default-field">
+                          <span className="control-label">Default finish</span>
+                          <select
+                            className="input-shell"
+                            value={part.defaultFinish || resolvePartDefaultFinish(part) || ""}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                colorParts: updatePartAtIndex(current.colorParts, index, (item) => ({
+                                  ...item,
+                                  defaultFinish: (event.target.value || undefined) as
+                                    | ProductFinishOption
+                                    | undefined
+                                }))
+                              }))
+                            }
+                          >
+                            <option value="">Select default finish</option>
+                            {part.allowedFinishes.map((finish) => (
+                              <option key={`${part.id}-default-${finish}`} value={finish}>
+                                {productFinishLabels[finish]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
                     </div>
 
                     <div className="setup-subsection">

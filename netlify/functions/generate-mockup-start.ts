@@ -2,6 +2,10 @@ import path from "node:path";
 import { AppError } from "../../src/lib/errors";
 import { resolveColorOption } from "../../src/lib/services/color-option.service";
 import { createAiProvider } from "../../src/lib/services/ai.service";
+import {
+  normalizeProductFinishOption,
+  resolvePartFinishSelection
+} from "../../src/lib/services/finish-option.service";
 import { buildMockupPrompt } from "../../src/lib/services/prompt.service";
 import { getGeneratedOutputDir } from "../../src/lib/services/storage.service";
 import { loadTemplate } from "../../src/lib/services/template.service";
@@ -9,6 +13,7 @@ import { loadTemplate } from "../../src/lib/services/template.service";
 interface GenerateMockupJsonBody {
   productSlug?: string;
   partPantones?: Record<string, string>;
+  partFinishes?: Record<string, string>;
   logoPrintColor?: string;
   printingMethod?: string;
   removeBackground?: boolean;
@@ -79,6 +84,7 @@ function validatePartPantones(
   template: Awaited<ReturnType<typeof loadTemplate>>
 ) {
   const raw = body.partPantones;
+  const rawFinishes = body.partFinishes || {};
   if (!raw || typeof raw !== "object") {
     throw new AppError("INVALID_FORM_DATA", "Please complete all required mockup fields.", 400);
   }
@@ -102,6 +108,30 @@ function validatePartPantones(
       );
     }
 
+    const requestedFinish = rawFinishes[part.id];
+    const normalizedRequestedFinish = normalizeProductFinishOption(requestedFinish);
+    const hasRequestedFinish =
+      typeof requestedFinish === "string" ? Boolean(requestedFinish.trim()) : Boolean(requestedFinish);
+
+    if (hasRequestedFinish && !normalizedRequestedFinish) {
+      throw new AppError(
+        "INVALID_FORM_DATA",
+        `The selected finish for ${part.label} is invalid.`,
+        400
+      );
+    }
+
+    if (
+      normalizedRequestedFinish &&
+      (!part.allowedFinishes || !part.allowedFinishes.includes(normalizedRequestedFinish))
+    ) {
+      throw new AppError(
+        "INVALID_FORM_DATA",
+        `The selected finish is not available for ${part.label}.`,
+        400
+      );
+    }
+
     return {
       partId: part.id,
       partLabel: part.label,
@@ -109,7 +139,8 @@ function validatePartPantones(
       instructionCue: part.instructionCue,
       instructionColorHex: part.instructionColorHex,
       pantoneCode,
-      pantone
+      pantone,
+      selectedFinish: resolvePartFinishSelection(part, requestedFinish)
     };
   });
 }

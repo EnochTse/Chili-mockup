@@ -34,6 +34,8 @@
       "instructionCue": "Blue Top and lower barrel",
       "instructionColorHex": "#ff0000",
       "defaultPantoneCode": "Pantone Black C",
+      "allowedFinishes": ["matte", "glossy", "rubber"],
+      "defaultFinish": "matte",
       "indicatorAnchors": [
         {
           "id": "part-1-indicator-1",
@@ -58,6 +60,8 @@
       "instructionCue": "Red",
       "instructionColorHex": "#005aff",
       "defaultPantoneCode": "Pantone Black C",
+      "allowedFinishes": ["matte", "glossy", "metallic"],
+      "defaultFinish": "metallic",
       "indicatorAnchors": [
         {
           "id": "part-2-indicator-1",
@@ -74,6 +78,8 @@
       "description": "Top accessory",
       "instructionColorHex": "#fff600",
       "defaultPantoneCode": "Pantone Black C",
+      "allowedFinishes": ["matte", "glossy", "metallic"],
+      "defaultFinish": "glossy",
       "indicatorAnchors": [
         {
           "id": "part-3-indicator-1",

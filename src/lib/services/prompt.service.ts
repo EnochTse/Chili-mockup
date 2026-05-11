@@ -1,4 +1,5 @@
-import type { ResolvedProductTemplate, SelectedPartPantone, TemplatePublicDto } from "@/lib/types";
+import { productFinishLabels } from "@/lib/services/finish-option.service";
+import type { ProductFinishOption, ResolvedProductTemplate, SelectedPartPantone, TemplatePublicDto } from "@/lib/types";
 
 type PromptTemplateInput =
   | ResolvedProductTemplate
@@ -52,6 +53,13 @@ export function getPrintingMethodPrompt(method: string) {
   );
 }
 
+const finishPromptMap: Record<ProductFinishOption, string> = {
+  matte: "matte finish with low sheen and a non-reflective surface",
+  glossy: "glossy finish with visible reflections and a polished surface",
+  rubber: "rubberized soft-touch finish with muted reflections",
+  metallic: "metallic finish with subtle specular highlights and a reflective material character"
+};
+
 export function buildMockupPrompt(params: {
   template: PromptTemplateInput;
   selectedPartPantones: SelectedPartPantone[];
@@ -71,7 +79,10 @@ export function buildMockupPrompt(params: {
         selection.instructionColorHex
           ? `   Instruction overlay color: ${selection.instructionColorHex}`
           : "",
-        `   Requested color: ${selection.pantone.label} (${selection.pantone.previewHex})`
+        `   Requested color: ${selection.pantone.label} (${selection.pantone.previewHex})`,
+        selection.selectedFinish
+          ? `   Requested finish: ${productFinishLabels[selection.selectedFinish]} (${finishPromptMap[selection.selectedFinish]})`
+          : ""
       ]
         .filter(Boolean)
         .join("\n")

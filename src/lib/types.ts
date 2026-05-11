@@ -9,6 +9,8 @@ export interface ProductSpecification {
   value: string;
 }
 
+export type ProductFinishOption = "matte" | "glossy" | "rubber" | "metallic";
+
 export interface ProductColorPart {
   id: string;
   label: string;
@@ -16,6 +18,8 @@ export interface ProductColorPart {
   instructionCue?: string;
   instructionColorHex?: string;
   defaultPantoneCode?: string;
+  allowedFinishes?: ProductFinishOption[];
+  defaultFinish?: ProductFinishOption;
   indicatorAnchors?: PartIndicatorAnchor[];
 }
 
@@ -115,6 +119,7 @@ export interface SelectedPartPantone {
   instructionColorHex?: string;
   pantoneCode: string;
   pantone: PantoneOption;
+  selectedFinish?: ProductFinishOption;
 }
 
 export interface ValidatedMockupRequest {

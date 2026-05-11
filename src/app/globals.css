@@ -979,6 +979,17 @@ input[type="file"].input-shell::file-selector-button {
   margin-top: var(--spacing-8);
 }
 
+.part-finish-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  margin-top: var(--spacing-12);
+}
+
+.finish-default-field {
+  margin-top: var(--spacing-12);
+}
+
 .quick-color-button {
   display: inline-flex;
   align-items: center;

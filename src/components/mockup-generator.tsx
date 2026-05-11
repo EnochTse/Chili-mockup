@@ -5,8 +5,17 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
 import { getQuickColorOptions, resolveColorOption } from "@/lib/services/color-option.service";
+import {
+  productFinishLabels,
+  resolvePartFinishSelection
+} from "@/lib/services/finish-option.service";
 import { buildMockupPrompt, getPrintingMethodPrompt } from "@/lib/services/prompt.service";
-import type { SelectedPartPantone, TemplatePublicDto, TemplateSummaryDto } from "@/lib/types";
+import type {
+  ProductFinishOption,
+  SelectedPartPantone,
+  TemplatePublicDto,
+  TemplateSummaryDto
+} from "@/lib/types";
 
 interface GenerateResponse {
   success: boolean;
@@ -27,6 +36,7 @@ interface GenerateResponse {
       partId: string;
       partLabel: string;
       pantoneCode: string;
+      selectedFinish?: string;
     }>;
     baseImagePath?: string;
     baseProductImagePath: string;
@@ -215,7 +225,8 @@ function getPartNumberText(label: string, fallbackIndex: number) {
 
 function buildSelectedPartPantones(
   template: TemplatePublicDto,
-  partPantones: Record<string, string>
+  partPantones: Record<string, string>,
+  partFinishes: Record<string, ProductFinishOption>
 ): SelectedPartPantone[] {
   return template.colorParts.map((part) => {
     const pantoneCode = partPantones[part.id] || "";
@@ -231,9 +242,19 @@ function buildSelectedPartPantones(
       instructionCue: part.instructionCue,
       instructionColorHex: part.instructionColorHex,
       pantoneCode,
-      pantone
+      pantone,
+      selectedFinish: resolvePartFinishSelection(part, partFinishes[part.id])
     };
   });
+}
+
+function buildInitialPartFinishes(template: TemplatePublicDto) {
+  return Object.fromEntries(
+    template.colorParts.flatMap((part) => {
+      const selectedFinish = resolvePartFinishSelection(part, part.defaultFinish);
+      return selectedFinish ? [[part.id, selectedFinish]] : [];
+    })
+  ) as Record<string, ProductFinishOption>;
 }
 
 function getCanvasContext(canvas: HTMLCanvasElement) {
@@ -723,6 +744,7 @@ export default function MockupGenerator({
   const [pantoneFilter, setPantoneFilter] = useState("");
   const [openPartId, setOpenPartId] = useState<string | null>(null);
   const [partPantones, setPartPantones] = useState<Record<string, string>>({});
+  const [partFinishes, setPartFinishes] = useState<Record<string, ProductFinishOption>>({});
   const [logoPrintColor, setLogoPrintColor] = useState("");
   const [printingMethod, setPrintingMethod] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -800,6 +822,7 @@ export default function MockupGenerator({
             .map((part) => [part.id, part.defaultPantoneCode!])
         )
       );
+      setPartFinishes(buildInitialPartFinishes(initialTemplate));
       setLogoPrintColor(initialTemplate.defaultLogoPrintColor || "");
       setPrintingMethod("");
       setLogoFile(null);
@@ -820,6 +843,7 @@ export default function MockupGenerator({
     setTemplateError("This product has not been configured for mockup generation.");
     setIsTemplateLoading(false);
     setFocusedPartId(null);
+    setPartFinishes({});
   }, [productSlug]);
 
   useEffect(() => {
@@ -1188,12 +1212,13 @@ export default function MockupGenerator({
       const requestMode = getGenerateRequestMode(endpoint);
       const startEndpoint = getGenerateStartEndpoint(endpoint);
       const statusEndpoint = getGenerateStatusEndpoint(endpoint);
-      const selectedPartPantones = buildSelectedPartPantones(template, partPantones);
+      const selectedPartPantones = buildSelectedPartPantones(template, partPantones, partFinishes);
 
       if (requestMode === "local-next-api") {
         const formData = makeGenerateFormData({
           productSlug,
           partPantones,
+          partFinishes,
           logoPrintColor,
           printingMethod,
           logoFile
@@ -1277,6 +1302,7 @@ export default function MockupGenerator({
           body: JSON.stringify({
             productSlug,
             partPantones,
+            partFinishes,
             logoPrintColor,
             printingMethod,
             removeBackground: false,
@@ -1703,6 +1729,7 @@ export default function MockupGenerator({
                     template.pantoneOptions,
                     partPantones[part.id] || ""
                   );
+                  const selectedFinish = resolvePartFinishSelection(part, partFinishes[part.id]);
                   const partNumber = getPartNumberText(part.label, Math.max(partIndex, 0));
                   const isFocusedPart = activePartId === part.id;
                   const isMutedPart = Boolean(activePartId) && !isFocusedPart;
@@ -1787,6 +1814,30 @@ export default function MockupGenerator({
                             aria-hidden="true"
                           />
                           <span>{selectedPantone.previewHex}</span>
+                        </div>
+                      ) : null}
+
+                      {part.allowedFinishes?.length ? (
+                        <div className="part-finish-field">
+                          <span className="control-label">Material finish</span>
+                          <div className="quick-choice-row" aria-label={`${part.label} finish options`}>
+                            {part.allowedFinishes.map((finish) => (
+                              <button
+                                key={`${part.id}-${finish}`}
+                                type="button"
+                                className={`quick-choice-button${selectedFinish === finish ? " is-active" : ""}`}
+                                onClick={() => {
+                                  setFocusedPartId(part.id);
+                                  setPartFinishes((current) => ({
+                                    ...current,
+                                    [part.id]: finish
+                                  }));
+                                }}
+                              >
+                                {productFinishLabels[finish]}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       ) : null}
 
@@ -2039,6 +2090,7 @@ export default function MockupGenerator({
 function makeGenerateFormData(params: {
   productSlug: string;
   partPantones: Record<string, string>;
+  partFinishes: Record<string, ProductFinishOption>;
   logoPrintColor: string;
   printingMethod: string;
   logoFile: File;
@@ -2046,6 +2098,7 @@ function makeGenerateFormData(params: {
   const formData = new FormData();
   formData.append("productSlug", params.productSlug);
   formData.append("partPantones", JSON.stringify(params.partPantones));
+  formData.append("partFinishes", JSON.stringify(params.partFinishes));
   formData.append("logoPrintColor", params.logoPrintColor);
   formData.append("printingMethod", params.printingMethod);
   formData.append("removeBackground", "false");

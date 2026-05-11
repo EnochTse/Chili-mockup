@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { AppError } from "@/lib/errors";
+import {
+  resolvePartDefaultFinish,
+  sanitizeAllowedFinishes
+} from "@/lib/services/finish-option.service";
 import { loadTemplate, toTemplatePublicDto } from "@/lib/services/template.service";
 import type {
   PartIndicatorAnchor,
@@ -96,6 +100,8 @@ function sanitizeColorParts(
     instructionCue?: string;
     instructionColorHex?: string;
     defaultPantoneCode?: string;
+    allowedFinishes?: unknown;
+    defaultFinish?: string;
     indicatorAnchors?: Array<{
       id?: string;
       targetXPercent?: number | string;
@@ -189,6 +195,11 @@ function sanitizeColorParts(
         instructionCue: (part.instructionCue || "").trim() || undefined,
         instructionColorHex: (part.instructionColorHex || "").trim() || undefined,
         defaultPantoneCode: (part.defaultPantoneCode || "").trim() || undefined,
+        allowedFinishes: sanitizeAllowedFinishes(part.allowedFinishes),
+        defaultFinish: resolvePartDefaultFinish({
+          allowedFinishes: sanitizeAllowedFinishes(part.allowedFinishes),
+          defaultFinish: part.defaultFinish
+        }),
         indicatorAnchors: sanitizeIndicatorAnchors(part.indicatorAnchors, index)
       };
     })
@@ -252,6 +263,8 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
         instructionCue?: string;
         instructionColorHex?: string;
         defaultPantoneCode?: string;
+        allowedFinishes?: unknown;
+        defaultFinish?: string;
         indicatorAnchors?: Array<{
           id?: string;
           targetXPercent?: number | string;

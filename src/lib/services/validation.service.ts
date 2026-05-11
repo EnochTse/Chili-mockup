@@ -1,6 +1,10 @@
 import path from "node:path";
 import { resolveColorOption } from "@/lib/services/color-option.service";
 import { AppError } from "@/lib/errors";
+import {
+  normalizeProductFinishOption,
+  resolvePartFinishSelection
+} from "@/lib/services/finish-option.service";
 import type { ResolvedProductTemplate, ValidatedMockupRequest } from "@/lib/types";
 
 const allowedLogoMimeTypes = new Set([
@@ -25,6 +29,20 @@ function readOptionalBoolean(formData: FormData, field: string) {
   const value = formData.get(field);
   if (typeof value !== "string") return false;
   return value === "true" || value === "1" || value === "on";
+}
+
+function readOptionalJsonRecord(formData: FormData, field: string) {
+  const value = formData.get(field);
+  if (typeof value !== "string" || !value.trim()) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    throw new AppError("INVALID_FORM_DATA", "Please complete all required mockup fields.", 400);
+  }
 }
 
 function getMaxUploadSizeBytes() {
@@ -65,6 +83,8 @@ function validatePartPantones(
     throw new AppError("INVALID_FORM_DATA", "Please complete all required mockup fields.", 400);
   }
 
+  const rawPartFinishes = readOptionalJsonRecord(formData, "partFinishes");
+
   return template.colorParts.map((part) => {
     const rawValue = parsed[part.id];
     const pantoneCode = typeof rawValue === "string" ? rawValue.trim() : "";
@@ -85,6 +105,29 @@ function validatePartPantones(
       );
     }
 
+    const requestedFinish = rawPartFinishes[part.id];
+    const normalizedRequestedFinish = normalizeProductFinishOption(requestedFinish);
+    const hasRequestedFinish =
+      typeof requestedFinish === "string" ? Boolean(requestedFinish.trim()) : Boolean(requestedFinish);
+    if (hasRequestedFinish && !normalizedRequestedFinish) {
+      throw new AppError(
+        "INVALID_FORM_DATA",
+        `The selected finish for ${part.label} is invalid.`,
+        400
+      );
+    }
+
+    if (
+      normalizedRequestedFinish &&
+      (!part.allowedFinishes || !part.allowedFinishes.includes(normalizedRequestedFinish))
+    ) {
+      throw new AppError(
+        "INVALID_FORM_DATA",
+        `The selected finish is not available for ${part.label}.`,
+        400
+      );
+    }
+
     return {
       partId: part.id,
       partLabel: part.label,
@@ -92,7 +135,8 @@ function validatePartPantones(
       instructionCue: part.instructionCue,
       instructionColorHex: part.instructionColorHex,
       pantoneCode,
-      pantone
+      pantone,
+      selectedFinish: resolvePartFinishSelection(part, requestedFinish)
     };
   });
 }
