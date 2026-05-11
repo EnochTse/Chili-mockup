@@ -1,4 +1,11 @@
-import type { ResolvedProductTemplate, SelectedPartPantone } from "@/lib/types";
+import type { ResolvedProductTemplate, SelectedPartPantone, TemplatePublicDto } from "@/lib/types";
+
+type PromptTemplateInput =
+  | ResolvedProductTemplate
+  | Pick<
+      TemplatePublicDto,
+      "name" | "slug" | "size" | "specifications" | "constraints"
+    >;
 
 export const printingMethodPrompts: Record<
   string,
@@ -46,7 +53,7 @@ export function getPrintingMethodPrompt(method: string) {
 }
 
 export function buildMockupPrompt(params: {
-  template: ResolvedProductTemplate;
+  template: PromptTemplateInput;
   selectedPartPantones: SelectedPartPantone[];
   logoPrintColor: string;
   printingMethod: string;

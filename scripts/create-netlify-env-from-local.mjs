@@ -95,6 +95,8 @@ const netlifyEnv = [
   `APP_BASE_URL=${normalizedAppBaseUrl}`,
   "NODE_ENV=production",
   `NEXT_PUBLIC_SHOW_DEBUG=${readValue(localEnv.get("NEXT_PUBLIC_SHOW_DEBUG"), exampleEnv.get("NEXT_PUBLIC_SHOW_DEBUG"), "false")}`,
+  `NEXT_PUBLIC_GENERATE_ENDPOINT=${readValue(localEnv.get("NEXT_PUBLIC_GENERATE_ENDPOINT"), exampleEnv.get("NEXT_PUBLIC_GENERATE_ENDPOINT"), "https://your-cloud-run-url/generate-mockup")}`,
+  `NEXT_PUBLIC_GENERATE_TIMEOUT_MS=${readValue(localEnv.get("NEXT_PUBLIC_GENERATE_TIMEOUT_MS"), exampleEnv.get("NEXT_PUBLIC_GENERATE_TIMEOUT_MS"), "360000")}`,
   "",
   "# Netlify should not rely on persistent filesystem writes for generated output.",
   "OUTPUT_STORAGE_MODE=data_url",

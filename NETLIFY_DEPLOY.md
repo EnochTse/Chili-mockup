@@ -2,11 +2,16 @@
 
 This project is ready to deploy to Netlify from GitHub.
 
+If you are using the Cloud Run image-generation branch, also follow:
+
+- `CLOUD_RUN_DEPLOY.md`
+
 Important:
 
 - `.env.local` is for local development only.
 - Netlify does not use `.env.local` from your repository during deploys.
 - Real secrets such as `GEMINI_API_KEY` must be imported into Netlify as environment variables.
+- When using Cloud Run for generation, Netlify only needs the public endpoint in `NEXT_PUBLIC_GENERATE_ENDPOINT`. Keep the real Gemini API key on Cloud Run.
 
 ## Files added for deployment
 

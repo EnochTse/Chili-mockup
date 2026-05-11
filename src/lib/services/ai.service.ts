@@ -324,7 +324,7 @@ function normalizeGeminiErrorForModel(error: unknown, model: string): AppError {
   if (isNetworkError) {
     return new AppError(
       "AI_NETWORK_ERROR",
-      `The Gemini connection closed before an image was returned for ${model}. This is usually transient; the app uses batch polling with 1K output by default to avoid long single-request waits. Please try Generate mockup again.${
+      `The Gemini connection closed before an image was returned for ${model}. This is usually transient; please try Generate mockup again.${
         process.env.NEXT_PUBLIC_SHOW_DEBUG === "true" && safeDetails
           ? ` Gemini detail: ${safeDetails}`
           : ""
@@ -529,33 +529,13 @@ export class GeminiImageProvider implements AiImageProvider {
         "Gemini image generation started",
         [
           `model=${this.model}`,
-          "mode=batch",
+          "mode=direct",
           `imageSize=${getGeminiImageSize()}`,
           `aspectRatio=${getGeminiImageAspectRatio()}`
         ].join("; ")
       );
 
-      const batchJob = await (this.ai.batches.create as unknown as (
-        request: unknown
-      ) => Promise<any>)(buildGeminiBatchCreateRequest(this.model, input));
-      console.info(
-        "Gemini batch job created",
-        [`name=${batchJob?.name || "unknown"}`, `state=${batchJob?.state || "unknown"}`].join(
-          "; "
-        )
-      );
-      const completedJob = await this.waitForBatchResponse(batchJob);
-      const batchResult = extractGeminiBatchResponse(completedJob);
-
-      if (batchResult.error) {
-        throw new AppError(
-          "AI_GENERATION_FAILED",
-          `Gemini batch request failed. ${summarizeBatchError(batchResult.error)}`,
-          502
-        );
-      }
-
-      response = batchResult.response;
+      response = await this.ai.models.generateContent(buildGeminiGenerateRequest(this.model, input));
       imagePart = findInlineImagePart(response);
     } catch (error) {
       throw normalizeGeminiErrorForModel(error, this.model);

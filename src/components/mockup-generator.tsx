@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
 import { getQuickColorOptions, resolveColorOption } from "@/lib/services/color-option.service";
-import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
-import type { TemplatePublicDto, TemplateSummaryDto } from "@/lib/types";
+import { buildMockupPrompt, getPrintingMethodPrompt } from "@/lib/services/prompt.service";
+import type { SelectedPartPantone, TemplatePublicDto, TemplateSummaryDto } from "@/lib/types";
 
 interface GenerateResponse {
   success: boolean;
@@ -52,6 +52,13 @@ const logoPrintColorLabels: Record<string, string> = {
 };
 
 const jobStatusFetchTimeoutMs = 30000;
+const parsedDirectGenerateTimeoutMs = Number.parseInt(
+  process.env.NEXT_PUBLIC_GENERATE_TIMEOUT_MS || "360000",
+  10
+);
+const directGenerateTimeoutMs = Number.isFinite(parsedDirectGenerateTimeoutMs)
+  ? Math.max(parsedDirectGenerateTimeoutMs, 60000)
+  : 360000;
 const localJobPollIntervalMs = 3000;
 const localJobMaxWaitMs = 15 * 60 * 1000;
 const maxClientLogoSizeBytes = 4 * 1024 * 1024;
@@ -62,7 +69,7 @@ const logoOffsetLimit = 0.35;
 const localNextApiGenerateEndpoint = "/api/mockup/generate";
 const netlifyFunctionGenerateEndpoint = "/.netlify/functions/generate-mockup";
 const logoQuarterTurnDegrees = 90;
-type GenerateRequestMode = "local-next-api" | "netlify-job";
+type GenerateRequestMode = "local-next-api" | "netlify-job" | "external-direct";
 
 type PixelRect = {
   x: number;
@@ -112,9 +119,15 @@ function getGenerateEndpoint() {
 }
 
 function getGenerateRequestMode(endpoint: string): GenerateRequestMode {
-  return process.env.NODE_ENV === "development" && endpoint.startsWith("/api/")
-    ? "local-next-api"
-    : "netlify-job";
+  if (process.env.NODE_ENV === "development" && endpoint.startsWith("/api/")) {
+    return "local-next-api";
+  }
+
+  if (/^https?:\/\//i.test(endpoint)) {
+    return "external-direct";
+  }
+
+  return "netlify-job";
 }
 
 function getGenerateStartEndpoint(endpoint: string) {
@@ -136,6 +149,14 @@ function buildPreviewImageUrl(imageUrl: string, attempt: number) {
 
   const separator = imageUrl.includes("?") ? "&" : "?";
   return `${imageUrl}${separator}v=${Date.now()}-${attempt}`;
+}
+
+function toAbsoluteAssetUrl(assetUrl: string) {
+  if (/^(https?:)?\/\//i.test(assetUrl) || assetUrl.startsWith("data:")) {
+    return assetUrl;
+  }
+
+  return new URL(assetUrl, window.location.origin).toString();
 }
 
 async function fetchJsonWithTimeout<T>(
@@ -168,7 +189,7 @@ async function fetchJsonWithTimeout<T>(
         const contentType = response.headers.get("content-type") || "unknown";
         throw new Error(
           compactText.startsWith("<")
-            ? `NON_JSON_RESPONSE: ${requestTarget} returned HTML instead of JSON (HTTP ${response.status}, content-type ${contentType}). This usually means the app hit the wrong Netlify endpoint.`
+            ? `NON_JSON_RESPONSE: ${requestTarget} returned HTML instead of JSON (HTTP ${response.status}, content-type ${contentType}). This usually means the app hit the wrong generate endpoint.`
             : `INVALID_JSON_RESPONSE: ${requestTarget} returned non-JSON content (HTTP ${response.status}, content-type ${contentType}). ${compactText}`
         );
       }
@@ -185,6 +206,29 @@ function formatElapsedTime(ms: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function buildSelectedPartPantones(
+  template: TemplatePublicDto,
+  partPantones: Record<string, string>
+): SelectedPartPantone[] {
+  return template.colorParts.map((part) => {
+    const pantoneCode = partPantones[part.id] || "";
+    const pantone = resolveColorOption(template.pantoneOptions, pantoneCode);
+    if (!pantone) {
+      throw new Error(`INVALID_PANTONE: Missing or invalid Pantone selection for ${part.label}.`);
+    }
+
+    return {
+      partId: part.id,
+      partLabel: part.label,
+      partDescription: part.description,
+      instructionCue: part.instructionCue,
+      instructionColorHex: part.instructionColorHex,
+      pantoneCode,
+      pantone
+    };
+  });
 }
 
 function getCanvasContext(canvas: HTMLCanvasElement) {
@@ -974,7 +1018,7 @@ export default function MockupGenerator({
     clearPreviewRetryTimeout();
     setIsSubmitting(true);
     setSubmitError(null);
-    setGenerationStatus("Starting Gemini job...");
+    setGenerationStatus("Preparing Gemini generation...");
     setCompositedPreviewUrl(null);
     setLogoTransform(createDefaultLogoTransform());
     setIsLogoDragging(false);
@@ -985,6 +1029,7 @@ export default function MockupGenerator({
       const requestMode = getGenerateRequestMode(endpoint);
       const startEndpoint = getGenerateStartEndpoint(endpoint);
       const statusEndpoint = getGenerateStatusEndpoint(endpoint);
+      const selectedPartPantones = buildSelectedPartPantones(template, partPantones);
 
       if (requestMode === "local-next-api") {
         const formData = makeGenerateFormData({
@@ -1000,74 +1045,65 @@ export default function MockupGenerator({
             method: "POST",
             body: formData
           },
-          jobStatusFetchTimeoutMs
+          directGenerateTimeoutMs
         );
         const startData = startResult.data;
 
-        if (!startResult.response.ok || !startData.success || !startData.jobName) {
+        if (!startResult.response.ok || !startData.success || !startData.imageUrl) {
           throw new Error(
             startData.errorCode
               ? `${startData.errorCode}: ${startData.error}`
-              : startData.error || "Generation job failed to start."
+              : startData.error || "Generation failed."
           );
         }
 
-        const startedAt = Date.now();
-        let finalData: GenerateResponse | null = null;
-
-        while (Date.now() - startedAt <= localJobMaxWaitMs) {
-          const elapsedMs = Date.now() - startedAt;
-          setGenerationStatus(
-            `Gemini job ${startData.state || "queued"}... ${formatElapsedTime(elapsedMs)}`
-          );
-          await new Promise((resolve) => window.setTimeout(resolve, localJobPollIntervalMs));
-
-          const statusResult = await fetchJsonWithTimeout<GenerateResponse>(
-            statusEndpoint,
-            {
-              method: "POST",
-              headers: {
-                "content-type": "application/json"
-              },
-              body: JSON.stringify({
-                productSlug,
-                jobName: startData.jobName
-              })
-            },
-            jobStatusFetchTimeoutMs
-          );
-          const statusData = statusResult.data;
-
-          if (!statusResult.response.ok || !statusData.success) {
-            throw new Error(
-              statusData.errorCode
-                ? `${statusData.errorCode}: ${statusData.error}`
-                : statusData.error || "Generation status check failed."
-            );
-          }
-
-          startData.state = statusData.state || startData.state;
-          setGenerationStatus(
-            `Gemini job ${statusData.state || "running"}... ${formatElapsedTime(elapsedMs)}`
-          );
-
-          if (statusData.completed && statusData.imageUrl) {
-            finalData = statusData;
-            break;
-          }
-        }
-
-        if (!finalData?.imageUrl) {
-          throw new Error(
-            "AI_GENERATION_TIMEOUT: Gemini is still processing this job after 15 minutes. Please try again later."
-          );
-        }
-
-        if (finalData.provider !== "gemini" || finalData.stubMode) {
+        if (startData.provider !== "gemini" || startData.stubMode) {
           throw new Error("REAL_AI_REQUIRED: The API did not return a real Gemini image.");
         }
 
-        setResult(finalData);
+        setResult(startData);
+        setGenerationStatus(null);
+        return;
+      }
+
+      if (requestMode === "external-direct") {
+        setGenerationStatus("Generating mockup with Gemini...");
+        const directResult = await fetchJsonWithTimeout<GenerateResponse>(
+          endpoint,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json"
+            },
+            body: JSON.stringify({
+              productSlug,
+              prompt: buildMockupPrompt({
+                template,
+                selectedPartPantones,
+                logoPrintColor,
+                printingMethod
+              }),
+              baseProductImageUrl: toAbsoluteAssetUrl(template.baseImageUrl),
+              instructionImageUrl: toAbsoluteAssetUrl(template.instructionImageUrl)
+            })
+          },
+          directGenerateTimeoutMs
+        );
+        const directData = directResult.data;
+
+        if (!directResult.response.ok || !directData.success || !directData.imageUrl) {
+          throw new Error(
+            directData.errorCode
+              ? `${directData.errorCode}: ${directData.error}`
+              : directData.error || "Generation failed."
+          );
+        }
+
+        if (directData.provider !== "gemini" || directData.stubMode) {
+          throw new Error("REAL_AI_REQUIRED: The API did not return a real Gemini image.");
+        }
+
+        setResult(directData);
         setGenerationStatus(null);
         return;
       }
@@ -1161,7 +1197,9 @@ export default function MockupGenerator({
       setGenerationStatus(null);
       if (error instanceof DOMException && error.name === "AbortError") {
         setSubmitError(
-          "AI_GENERATION_TIMEOUT: Gemini did not return a result within 210 seconds. Please try again later."
+          `AI_GENERATION_TIMEOUT: Gemini did not return a result within ${Math.round(
+            directGenerateTimeoutMs / 1000
+          )} seconds. Please try again later.`
         );
       } else {
         setSubmitError(error instanceof Error ? error.message : "Generation failed.");
