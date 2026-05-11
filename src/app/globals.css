@@ -1,19 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --color-eggshell: #f8faf4;
-  --color-powder: #eef3e4;
-  --color-chalk: #dbe4cf;
-  --color-fog: #a6b18f;
-  --color-gravel: #5e6651;
-  --color-slate: #8d957d;
-  --color-cinder: #32382c;
-  --color-obsidian: #1f2618;
-  --color-signal-blue: #215fdd;
-  --color-ember: #d4571c;
-  --color-chili-green: #61a60e;
-  --color-chili-green-deep: #487a12;
-  --gradient-voice-spectrum: conic-gradient(from 180deg, rgb(61, 117, 216) 11.5931deg, rgb(42, 104, 210) 26.317deg, rgb(117, 190, 229) 32.3924deg, rgb(82, 208, 233) 38.9146deg, rgb(33, 89, 186) 75.3508deg, rgb(58, 116, 218) 85.0388deg, rgb(108, 215, 236) 94.5293deg, rgb(90, 185, 241) 122.11deg, rgb(51, 161, 229) 129.967deg, rgb(31, 95, 207) 136.719deg, rgb(44, 84, 202) 144.313deg, rgb(58, 158, 207) 175.985deg, rgb(49, 103, 197) 183.869deg, rgb(173, 232, 243) 201.635deg, rgb(216, 241, 245) 224.865deg, rgb(165, 219, 230) 239.729deg, rgb(43, 157, 214) 268.165deg, rgb(174, 224, 233) 286.211deg, rgb(32, 186, 208) 329.654deg, rgb(30, 83, 176) 343.551deg, rgb(47, 64, 210) 359.255deg);
+  --color-eggshell: #f2f2f4;
+  --color-powder: #ececef;
+  --color-chalk: #d9dadd;
+  --color-fog: #b1b2b6;
+  --color-gravel: #6f7176;
+  --color-slate: #8f8f94;
+  --color-cinder: #2e3136;
+  --color-obsidian: #0f1012;
+  --color-signal-blue: #0f1012;
+  --color-ember: #0f1012;
+  --gradient-voice-spectrum: linear-gradient(135deg, #0f1012 0%, #7e8084 52%, #f2f2f4 100%);
 
   --font-waldenburg: "Waldenburg", "Cormorant Garamond", "Libre Baskerville", Georgia, serif;
   --font-waldenburgfh: "WaldenburgFH", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -46,18 +44,18 @@
   --radius-panel: 24px;
   --radius-pill: 9999px;
 
-  --shadow-inset: rgba(38, 48, 30, 0.08) 0 0 0 1px inset;
-  --shadow-card: 0 18px 44px rgba(44, 56, 34, 0.08);
-  --shadow-button: 0 10px 24px rgba(40, 54, 24, 0.08);
+  --shadow-inset: rgba(15, 16, 18, 0.06) 0 0 0 1px inset;
+  --shadow-card: 0 12px 34px rgba(15, 16, 18, 0.05);
+  --shadow-button: 0 6px 18px rgba(15, 16, 18, 0.05);
 
   --background: var(--color-eggshell);
   --foreground: var(--color-obsidian);
   --muted: var(--color-gravel);
   --panel: #ffffff;
   --border: var(--color-chalk);
-  --accent: var(--color-chili-green);
-  --accent-strong: var(--color-chili-green-deep);
-  --accent-soft: rgba(97, 166, 14, 0.14);
+  --accent: var(--color-obsidian);
+  --accent-strong: var(--color-obsidian);
+  --accent-soft: rgba(15, 16, 18, 0.08);
   --motion-fast: 150ms;
   --motion-base: 300ms;
   --motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
@@ -76,8 +74,8 @@ body {
   margin: 0;
   color: var(--foreground);
   background:
-    radial-gradient(circle at top left, rgba(97, 166, 14, 0.12), transparent 26%),
-    linear-gradient(180deg, #fbfcf9 0%, #f4f7ef 100%);
+    radial-gradient(circle at top left, rgba(15, 16, 18, 0.03), transparent 24%),
+    linear-gradient(180deg, #fafafb 0%, #f2f2f4 100%);
   font-family: var(--font-inter);
   font-size: var(--text-body);
   line-height: 1.43;
@@ -108,7 +106,7 @@ summary:focus-visible {
 .mockup-page {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-24);
+  gap: var(--spacing-40);
   min-height: 100vh;
   width: 100%;
   max-width: 1760px;
@@ -141,7 +139,7 @@ summary:focus-visible {
 .page-header {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-24);
+  gap: var(--spacing-40);
 }
 
 .catalog-header {
@@ -183,11 +181,11 @@ summary:focus-visible {
   align-items: center;
   min-height: 32px;
   padding: 0 var(--spacing-12);
-  border: 1px solid rgba(97, 166, 14, 0.2);
+  border: 1px solid rgba(15, 16, 18, 0.08);
   border-radius: var(--radius-pill);
-  background: rgba(97, 166, 14, 0.1);
+  background: rgba(15, 16, 18, 0.04);
   box-shadow: none;
-  color: var(--accent-strong);
+  color: var(--color-cinder);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
@@ -198,11 +196,11 @@ summary:focus-visible {
   align-items: center;
   justify-content: center;
   min-height: 32px;
-  border: 1px solid rgba(97, 166, 14, 0.18);
+  border: 1px solid rgba(15, 16, 18, 0.1);
   border-radius: var(--radius-pill);
   background: #ffffff;
   box-shadow: var(--shadow-button);
-  color: var(--accent-strong);
+  color: var(--color-obsidian);
   cursor: pointer;
   padding: 0 var(--spacing-12);
   text-decoration: none;
@@ -216,7 +214,7 @@ summary:focus-visible {
 
 .secondary-link-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(97, 166, 14, 0.3);
+  border-color: rgba(15, 16, 18, 0.22);
 }
 
 .secondary-link-button:disabled {
@@ -259,9 +257,9 @@ summary:focus-visible {
   justify-content: center;
   min-height: 32px;
   padding: 0 12px;
-  border: 1px solid rgba(50, 56, 44, 0.08);
+  border: 1px solid rgba(15, 16, 18, 0.1);
   border-radius: var(--radius-pill);
-  background: rgba(50, 56, 44, 0.05);
+  background: rgba(15, 16, 18, 0.04);
   color: var(--color-cinder);
   font-size: 12px;
   font-weight: 600;
@@ -269,16 +267,17 @@ summary:focus-visible {
 }
 
 .status-pill.is-complete {
-  border-color: rgba(97, 166, 14, 0.22);
-  background: rgba(97, 166, 14, 0.12);
-  color: var(--accent-strong);
+  border-color: rgba(15, 16, 18, 0.18);
+  background: rgba(15, 16, 18, 0.08);
+  color: var(--color-obsidian);
 }
 
 .page-intro {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-  gap: var(--spacing-24);
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: var(--spacing-48);
+  align-items: start;
+  padding: var(--spacing-24) 0 var(--spacing-8);
 }
 
 .catalog-hero {
@@ -300,21 +299,23 @@ summary:focus-visible {
   margin: 0;
   color: var(--color-obsidian);
   font-family: var(--font-waldenburgfh);
-  font-size: clamp(2.2rem, 4.8vw, 3.5rem);
+  font-size: clamp(2.8rem, 5.6vw, 4.8rem);
   font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 0.98;
+  letter-spacing: -0.055em;
+  line-height: 0.94;
 }
 
 .notice-panel {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: var(--shadow-card);
+  align-self: end;
+  border: 1px solid rgba(15, 16, 18, 0.08);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: none;
+  backdrop-filter: blur(18px);
   color: var(--color-gravel);
   font-size: var(--text-body);
   line-height: 1.5;
-  padding: var(--spacing-16);
+  padding: 18px 20px;
 }
 
 .notice-panel strong {
@@ -331,15 +332,15 @@ summary:focus-visible {
 
 .workflow-grid {
   display: grid;
-  grid-template-columns: minmax(0, 4.5fr) minmax(320px, 1.05fr);
-  gap: var(--spacing-24);
+  grid-template-columns: minmax(0, 5fr) minmax(320px, 0.95fr);
+  gap: var(--spacing-32);
   align-items: start;
 }
 
 .workflow-main {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-16);
+  gap: var(--spacing-24);
   min-width: 0;
 }
 
@@ -374,8 +375,8 @@ summary:focus-visible {
 
 .catalog-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(97, 166, 14, 0.38);
-  box-shadow: 0 22px 44px rgba(46, 61, 28, 0.12);
+  border-color: rgba(15, 16, 18, 0.16);
+  box-shadow: 0 18px 42px rgba(15, 16, 18, 0.08);
 }
 
 .catalog-image-frame {
@@ -443,8 +444,8 @@ summary:focus-visible {
 }
 
 .list-row-button.is-active {
-  border-color: rgba(97, 166, 14, 0.26);
-  background: rgba(97, 166, 14, 0.08);
+  border-color: rgba(15, 16, 18, 0.14);
+  background: rgba(15, 16, 18, 0.04);
 }
 
 .list-row-button:hover {
@@ -500,11 +501,11 @@ summary:focus-visible {
 }
 
 .hero-support {
-  max-width: 62ch;
-  margin: var(--spacing-16) 0 0;
+  max-width: 56ch;
+  margin: var(--spacing-20) 0 0;
   color: var(--color-gravel);
-  font-size: 15px;
-  line-height: 1.7;
+  font-size: 16px;
+  line-height: 1.8;
 }
 
 .hero-action-row {
@@ -597,8 +598,8 @@ summary:focus-visible {
   min-width: 42px;
   height: 42px;
   border-radius: 14px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  background: rgba(15, 16, 18, 0.06);
+  color: var(--color-obsidian);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -638,8 +639,8 @@ summary:focus-visible {
   min-height: 28px;
   padding: 0 10px;
   border-radius: var(--radius-pill);
-  background: rgba(97, 166, 14, 0.1);
-  color: var(--accent-strong);
+  background: rgba(15, 16, 18, 0.05);
+  color: var(--color-obsidian);
   font-size: 12px;
   font-weight: 600;
 }
@@ -654,13 +655,13 @@ summary:focus-visible {
 }
 
 .catalog-link-copy {
-  color: var(--accent-strong);
+  color: var(--color-obsidian);
   font-size: 13px;
   font-weight: 600;
 }
 
 .catalog-link-arrow {
-  color: var(--accent-strong);
+  color: var(--color-obsidian);
   font-size: 16px;
 }
 
@@ -763,7 +764,7 @@ summary:focus-visible {
 
 .form-panel {
   position: sticky;
-  top: var(--spacing-20);
+  top: var(--spacing-24);
   align-self: start;
   padding: 0;
   background: transparent;
@@ -772,6 +773,9 @@ summary:focus-visible {
 }
 
 .config-panel-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
   overflow: hidden;
 }
 
@@ -783,6 +787,8 @@ summary:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 0;
+  overflow-y: auto;
+  scroll-snap-type: y proximity;
 }
 
 .config-panel-head {
@@ -807,21 +813,24 @@ summary:focus-visible {
   overflow: hidden;
   height: 8px;
   border-radius: 9999px;
-  background: rgba(97, 166, 14, 0.1);
+  background: rgba(15, 16, 18, 0.08);
 }
 
 .config-progress-fill {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  background: linear-gradient(90deg, #111214, #54565b);
 }
 
 .form-section {
   display: grid;
   gap: var(--spacing-16);
-  padding: var(--spacing-20);
-  border-top: 1px solid rgba(50, 56, 44, 0.08);
+  min-height: min(78vh, 760px);
+  padding: 42px 32px;
+  border-top: 1px solid rgba(15, 16, 18, 0.08);
+  scroll-snap-align: start;
+  align-content: start;
 }
 
 .form-section:first-of-type {
@@ -836,7 +845,7 @@ summary:focus-visible {
 }
 
 .form-submit-section {
-  background: linear-gradient(180deg, rgba(97, 166, 14, 0.04), rgba(97, 166, 14, 0.01));
+  background: linear-gradient(180deg, rgba(15, 16, 18, 0.03), rgba(15, 16, 18, 0.01));
 }
 
 .requirements-checklist {
@@ -850,18 +859,18 @@ summary:focus-visible {
   align-items: center;
   min-height: 34px;
   padding: 0 12px;
-  border: 1px solid rgba(50, 56, 44, 0.08);
+  border: 1px solid rgba(15, 16, 18, 0.1);
   border-radius: var(--radius-pill);
-  background: rgba(50, 56, 44, 0.04);
+  background: rgba(15, 16, 18, 0.04);
   color: var(--color-cinder);
   font-size: 12px;
   font-weight: 600;
 }
 
 .requirement-chip.is-complete {
-  border-color: rgba(97, 166, 14, 0.22);
-  background: rgba(97, 166, 14, 0.12);
-  color: var(--accent-strong);
+  border-color: rgba(15, 16, 18, 0.14);
+  background: rgba(15, 16, 18, 0.08);
+  color: var(--color-obsidian);
 }
 
 .form-field {
@@ -1007,7 +1016,7 @@ input[type="file"].input-shell::file-selector-button {
   overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 18px;
-  background: #f7f5f2;
+  background: #f4f4f6;
 }
 
 .indicator-visual-frame > img {
@@ -1103,7 +1112,7 @@ input[type="file"].input-shell::file-selector-button {
 
 .indicator-visual-anchor.is-active .indicator-visual-target,
 .indicator-visual-anchor.is-active .indicator-visual-label {
-  box-shadow: 0 0 0 2px rgba(4, 71, 255, 0.16), 0 12px 28px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0 0 2px rgba(15, 16, 18, 0.12), 0 12px 28px rgba(0, 0, 0, 0.12);
   transform: translate(-50%, -50%) scale(1.02);
 }
 
@@ -1191,14 +1200,14 @@ input[type="file"].input-shell::file-selector-button {
 .part-selection-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-12);
+  gap: 30px;
 }
 
 .part-selection-card {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-12);
-  padding: var(--spacing-16);
+  gap: 22px;
+  padding: 30px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: #ffffff;
@@ -1214,9 +1223,9 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .part-selection-card.is-focused {
-  border-color: rgba(0, 0, 0, 0.16);
+  border-color: rgba(15, 16, 18, 0.14);
   background: #ffffff;
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 18px 36px rgba(15, 16, 18, 0.07);
   transform: translateY(-1px) scale(1);
 }
 
@@ -1428,7 +1437,7 @@ input[type="file"].input-shell::file-selector-button {
   min-height: 48px;
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  background: linear-gradient(135deg, #0f1012, #3a3c40);
   box-shadow: var(--shadow-button);
   color: #ffffff;
   cursor: pointer;
@@ -1499,13 +1508,13 @@ input[type="file"].input-shell::file-selector-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 760px;
-  padding: 92px var(--spacing-32) var(--spacing-32);
-  border: 1px solid rgba(97, 166, 14, 0.08);
-  border-radius: 24px;
+  min-height: 820px;
+  padding: 108px var(--spacing-40) var(--spacing-40);
+  border: 1px solid rgba(15, 16, 18, 0.06);
+  border-radius: 32px;
   background:
-    radial-gradient(circle at top left, rgba(97, 166, 14, 0.08), transparent 24%),
-    #f7f8f2;
+    radial-gradient(circle at top center, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(180deg, #fbfbfc 0%, #f1f1f3 100%);
 }
 
 .render-preview-shell {
@@ -1524,9 +1533,9 @@ input[type="file"].input-shell::file-selector-button {
 
 .render-stage-toolbar {
   position: absolute;
-  top: var(--spacing-24);
-  left: var(--spacing-24);
-  right: var(--spacing-24);
+  top: 28px;
+  left: 28px;
+  right: 28px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1534,7 +1543,6 @@ input[type="file"].input-shell::file-selector-button {
   pointer-events: none;
 }
 
-.render-stage-copy,
 .instruction-toggle-button {
   pointer-events: auto;
 }
@@ -1546,43 +1554,16 @@ input[type="file"].input-shell::file-selector-button {
   pointer-events: auto;
 }
 
-.render-stage-copy {
-  max-width: min(420px, 48%);
-}
-
-.render-stage-title {
-  margin: 0;
-  color: var(--color-obsidian);
-  font-size: clamp(1.6rem, 2.2vw, 2.4rem);
-  font-weight: 500;
-  line-height: 1.08;
-}
-
-.render-stage-description {
-  max-width: 40ch;
-  margin: var(--spacing-8) 0 0;
-  color: var(--color-gravel);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.render-stage-size {
-  margin: var(--spacing-12) 0 0;
-  color: var(--color-cinder);
-  font-size: 13px;
-  font-weight: 500;
-}
-
 .instruction-toggle-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 36px;
-  border: 1px solid rgba(97, 166, 14, 0.18);
+  border: 1px solid rgba(15, 16, 18, 0.1);
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: var(--shadow-button);
-  color: var(--accent-strong);
+  color: var(--color-obsidian);
   cursor: pointer;
   padding: 0 var(--spacing-16);
   white-space: nowrap;
@@ -1752,7 +1733,7 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .render-meta {
-  padding: var(--spacing-16) var(--spacing-8) 0;
+  padding: var(--spacing-20) var(--spacing-8) 0;
 }
 
 .result-frame {
@@ -1768,8 +1749,8 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .logo-adjust-panel {
-  margin-top: var(--spacing-16);
-  padding-top: var(--spacing-16);
+  margin-top: var(--spacing-20);
+  padding-top: var(--spacing-20);
   border-top: 1px solid var(--border);
 }
 
@@ -2001,6 +1982,19 @@ input[type="file"].input-shell::file-selector-button {
     position: static;
   }
 
+  .config-panel-shell {
+    max-height: none;
+  }
+
+  .generator-form {
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+
+  .form-section {
+    min-height: auto;
+  }
+
   .render-stage {
     min-height: 620px;
   }
@@ -2095,10 +2089,6 @@ input[type="file"].input-shell::file-selector-button {
   .logo-adjust-head {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .render-stage-copy {
-    max-width: none;
   }
 
   .instruction-toggle-button {

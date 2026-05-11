@@ -1088,14 +1088,6 @@ export default function MockupGenerator({
   const workflowCompletionPercent = workflowTotalSteps
     ? Math.round((workflowCompletedSteps / workflowTotalSteps) * 100)
     : 0;
-  const previewStatusLabel = isSubmitting
-    ? "Generating"
-    : isPreviewResolving
-      ? "Compositing"
-      : result?.imageUrl
-        ? "Ready"
-        : "Awaiting input";
-  const logoStatusLabel = logoFile ? logoFile.name : "No logo uploaded";
   const primaryPrintMethodLabel = printingMethod
     ? getPrintingMethodPrompt(printingMethod).label
     : "Not selected";
@@ -1450,83 +1442,19 @@ export default function MockupGenerator({
 
         <div className="page-intro">
           <div className="hero-copy-stack">
-            <p className="eyebrow">Product mockup workflow</p>
+            <p className="eyebrow">Interactive product preview</p>
             <h1 className="hero-title">Chili Product Mockup Generator</h1>
             <p className="hero-support">
-              Configure product colors, logo treatment, and material finish in one workspace, then
-              review a realistic reference mockup before final production checks.
+              Configure colour, logo treatment, and finish in one calm workspace. Scroll through
+              each option, then generate a realistic reference mockup for review.
             </p>
           </div>
           <div className="notice-panel">
-            <strong>Visual reference only.</strong> Not final production artwork.
-            <br />
-            Colors, logo size, and printing method must be confirmed by the Chili design
-            team.
+            <strong>Visual reference only.</strong> Final production artwork is confirmed
+            separately by the Chili design team.
           </div>
         </div>
 
-        <section className="workflow-summary-grid" aria-label="Current workflow summary">
-          <article className="stat-card">
-            <span className="stat-label">Product</span>
-            <strong className="stat-value">{template?.name || "Loading"}</strong>
-            <p className="stat-copy">
-              {template
-                ? `${template.colorParts.length} recolorable part${template.colorParts.length === 1 ? "" : "s"} available`
-                : "Preparing selected template"}
-            </p>
-          </article>
-          <article className="stat-card">
-            <span className="stat-label">Configuration</span>
-            <strong className="stat-value">{workflowCompletionPercent}%</strong>
-            <p className="stat-copy">
-              {configuredPartCount} of {template?.colorParts.length || 0} part colors selected.
-            </p>
-          </article>
-          <article className="stat-card">
-            <span className="stat-label">Preview status</span>
-            <strong className="stat-value">{previewStatusLabel}</strong>
-            <p className="stat-copy">
-              {result?.imageUrl
-                ? "Generated product image ready for local logo adjustment."
-                : "Base product preview is shown until you run a generation."}
-            </p>
-          </article>
-          <article className="stat-card">
-            <span className="stat-label">Logo source</span>
-            <strong className="stat-value stat-value-compact">{logoFile ? "Uploaded" : "Pending"}</strong>
-            <p className="stat-copy">{logoStatusLabel}</p>
-          </article>
-        </section>
-
-        <section className="workflow-strip" aria-label="Recommended workflow">
-          <article className="workflow-step-card">
-            <span className="workflow-step-index">01</span>
-            <div>
-              <h2 className="workflow-step-title">Select color parts</h2>
-              <p className="workflow-step-copy">
-                Search Pantone values and assign the right finish to each recolorable area.
-              </p>
-            </div>
-          </article>
-          <article className="workflow-step-card">
-            <span className="workflow-step-index">02</span>
-            <div>
-              <h2 className="workflow-step-title">Choose logo treatment</h2>
-              <p className="workflow-step-copy">
-                Set the print color, upload the client logo, and choose the print method.
-              </p>
-            </div>
-          </article>
-          <article className="workflow-step-card">
-            <span className="workflow-step-index">03</span>
-            <div>
-              <h2 className="workflow-step-title">Review and refine</h2>
-              <p className="workflow-step-copy">
-                Generate the preview, inspect the active indicator callouts, then save the image.
-              </p>
-            </div>
-          </article>
-        </section>
       </header>
 
       {isTemplateLoading ? (
@@ -1543,18 +1471,7 @@ export default function MockupGenerator({
               >
               <div className="render-stage">
                 <div className="render-stage-toolbar">
-                  <div className="render-stage-copy">
-                    <p className="panel-kicker">Base product</p>
-                    <h2 className="render-stage-title">{template.name}</h2>
-                    <p className="render-stage-description">{template.description}</p>
-                    {template.size ? (
-                      <p className="render-stage-size">Size: {template.size}</p>
-                    ) : null}
-                  </div>
                   <div className="render-stage-actions">
-                    <span className={`status-pill${result?.imageUrl ? " is-complete" : ""}`}>
-                      {previewStatusLabel}
-                    </span>
                     <button
                       type="button"
                       className="instruction-toggle-button"
@@ -1654,15 +1571,9 @@ export default function MockupGenerator({
                 ) : null}
               </div>
 
-              <div className="render-meta">
-                <p className="fine-print">Visual reference only.</p>
-                {result?.imageUrl ? (
-                  <>
-                    <p className="result-meta">
-                      Product generated by {result.model || "Nano Banana 2"} via Gemini API.
-                      Logo applied locally from the uploaded file.
-                    </p>
-                    <div className="logo-adjust-panel">
+              {result?.imageUrl ? (
+                <div className="render-meta">
+                  <div className="logo-adjust-panel">
                       <div className="logo-adjust-head">
                         <div>
                           <p className="logo-adjust-title">Logo position adjustment</p>
@@ -1781,14 +1692,9 @@ export default function MockupGenerator({
                           <output>{logoRotationDegrees}deg</output>
                         </div>
                       </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="result-meta">
-                    Base product image is shown here until you generate the customized mockup.
-                  </p>
-                )}
-              </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
           </div>
 
