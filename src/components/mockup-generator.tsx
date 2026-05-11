@@ -1076,6 +1076,29 @@ export default function MockupGenerator({
   const hasAllPartPantones = template
     ? template.colorParts.every((part) => Boolean(partPantones[part.id]))
     : false;
+  const configuredPartCount = template
+    ? template.colorParts.filter((part) => Boolean(partPantones[part.id])).length
+    : 0;
+  const workflowTotalSteps = (template?.colorParts.length || 0) + 3;
+  const workflowCompletedSteps =
+    configuredPartCount +
+    (logoPrintColor ? 1 : 0) +
+    (printingMethod ? 1 : 0) +
+    (logoFile ? 1 : 0);
+  const workflowCompletionPercent = workflowTotalSteps
+    ? Math.round((workflowCompletedSteps / workflowTotalSteps) * 100)
+    : 0;
+  const previewStatusLabel = isSubmitting
+    ? "Generating"
+    : isPreviewResolving
+      ? "Compositing"
+      : result?.imageUrl
+        ? "Ready"
+        : "Awaiting input";
+  const logoStatusLabel = logoFile ? logoFile.name : "No logo uploaded";
+  const primaryPrintMethodLabel = printingMethod
+    ? getPrintingMethodPrompt(printingMethod).label
+    : "Not selected";
 
   const canGenerate =
     Boolean(template) &&
@@ -1426,9 +1449,13 @@ export default function MockupGenerator({
         </div>
 
         <div className="page-intro">
-          <div>
+          <div className="hero-copy-stack">
             <p className="eyebrow">Product mockup workflow</p>
             <h1 className="hero-title">Chili Product Mockup Generator</h1>
+            <p className="hero-support">
+              Configure product colors, logo treatment, and material finish in one workspace, then
+              review a realistic reference mockup before final production checks.
+            </p>
           </div>
           <div className="notice-panel">
             <strong>Visual reference only.</strong> Not final production artwork.
@@ -1437,6 +1464,69 @@ export default function MockupGenerator({
             team.
           </div>
         </div>
+
+        <section className="workflow-summary-grid" aria-label="Current workflow summary">
+          <article className="stat-card">
+            <span className="stat-label">Product</span>
+            <strong className="stat-value">{template?.name || "Loading"}</strong>
+            <p className="stat-copy">
+              {template
+                ? `${template.colorParts.length} recolorable part${template.colorParts.length === 1 ? "" : "s"} available`
+                : "Preparing selected template"}
+            </p>
+          </article>
+          <article className="stat-card">
+            <span className="stat-label">Configuration</span>
+            <strong className="stat-value">{workflowCompletionPercent}%</strong>
+            <p className="stat-copy">
+              {configuredPartCount} of {template?.colorParts.length || 0} part colors selected.
+            </p>
+          </article>
+          <article className="stat-card">
+            <span className="stat-label">Preview status</span>
+            <strong className="stat-value">{previewStatusLabel}</strong>
+            <p className="stat-copy">
+              {result?.imageUrl
+                ? "Generated product image ready for local logo adjustment."
+                : "Base product preview is shown until you run a generation."}
+            </p>
+          </article>
+          <article className="stat-card">
+            <span className="stat-label">Logo source</span>
+            <strong className="stat-value stat-value-compact">{logoFile ? "Uploaded" : "Pending"}</strong>
+            <p className="stat-copy">{logoStatusLabel}</p>
+          </article>
+        </section>
+
+        <section className="workflow-strip" aria-label="Recommended workflow">
+          <article className="workflow-step-card">
+            <span className="workflow-step-index">01</span>
+            <div>
+              <h2 className="workflow-step-title">Select color parts</h2>
+              <p className="workflow-step-copy">
+                Search Pantone values and assign the right finish to each recolorable area.
+              </p>
+            </div>
+          </article>
+          <article className="workflow-step-card">
+            <span className="workflow-step-index">02</span>
+            <div>
+              <h2 className="workflow-step-title">Choose logo treatment</h2>
+              <p className="workflow-step-copy">
+                Set the print color, upload the client logo, and choose the print method.
+              </p>
+            </div>
+          </article>
+          <article className="workflow-step-card">
+            <span className="workflow-step-index">03</span>
+            <div>
+              <h2 className="workflow-step-title">Review and refine</h2>
+              <p className="workflow-step-copy">
+                Generate the preview, inspect the active indicator callouts, then save the image.
+              </p>
+            </div>
+          </article>
+        </section>
       </header>
 
       {isTemplateLoading ? (
@@ -1461,13 +1551,18 @@ export default function MockupGenerator({
                       <p className="render-stage-size">Size: {template.size}</p>
                     ) : null}
                   </div>
-                  <button
-                    type="button"
-                    className="instruction-toggle-button"
-                    onClick={() => setIsInstructionOpen(true)}
-                  >
-                    Instruction image
-                  </button>
+                  <div className="render-stage-actions">
+                    <span className={`status-pill${result?.imageUrl ? " is-complete" : ""}`}>
+                      {previewStatusLabel}
+                    </span>
+                    <button
+                      type="button"
+                      className="instruction-toggle-button"
+                      onClick={() => setIsInstructionOpen(true)}
+                    >
+                      Instruction image
+                    </button>
+                  </div>
                 </div>
 
                 {stageImageUrl ? (
@@ -1698,168 +1793,135 @@ export default function MockupGenerator({
           </div>
 
           <section className="form-panel" ref={formPanelRef}>
-            <div className="form-heading">
-              <p className="panel-kicker">Configuration</p>
-              <h2 className="section-title">Generate mockup</h2>
-            </div>
-
-            <form className="generator-form" onSubmit={handleSubmit}>
-              <div className="form-field">
-                <label className="control-label" htmlFor="pantoneFilter">
-                  Pantone search
-                </label>
-                <input
-                  id="pantoneFilter"
-                  className="input-shell"
-                  type="search"
-                  placeholder="Search Pantone, e.g. 485 C"
-                  value={pantoneFilter}
-                  onChange={(event) => setPantoneFilter(event.target.value)}
-                />
-                <p className="fine-print">
-                  {visiblePantoneOptions.length} of {template.pantoneOptions.length} Solid Coated
-                  colors
-                  {pantoneFilter.trim() ? "" : " shown. Search to narrow the list."}
-                </p>
+            <div className="surface config-panel-shell">
+              <div className="panel-head config-panel-head">
+                <div>
+                  <p className="panel-kicker">Configuration</p>
+                  <h2 className="section-title">Generate mockup</h2>
+                  <p className="panel-description">
+                    Build the request from top to bottom, then generate the preview when every
+                    required input is ready.
+                  </p>
+                </div>
+                <div className="config-status-block">
+                  <span className={`status-pill${canGenerate ? " is-complete" : ""}`}>
+                    {canGenerate ? "Ready to generate" : "Configuration in progress"}
+                  </span>
+                  <p className="config-progress-copy">
+                    {workflowCompletedSteps} of {workflowTotalSteps} required selections completed.
+                  </p>
+                </div>
+                <div className="config-progress-track" aria-hidden="true">
+                  <span
+                    className="config-progress-fill"
+                    style={{ width: `${workflowCompletionPercent}%` }}
+                  />
+                </div>
               </div>
 
-              <div className="part-selection-stack">
-                {template.colorParts.map((part, partIndex) => {
-                  const selectedPantone = resolveColorOption(
-                    template.pantoneOptions,
-                    partPantones[part.id] || ""
-                  );
-                  const selectedFinish = resolvePartFinishSelection(part, partFinishes[part.id]);
-                  const partNumber = getPartNumberText(part.label, Math.max(partIndex, 0));
-                  const isFocusedPart = activePartId === part.id;
-                  const isMutedPart = Boolean(activePartId) && !isFocusedPart;
+              <form className="generator-form" onSubmit={handleSubmit}>
+                <section className="form-section">
+                  <div className="form-section-head">
+                    <div>
+                      <p className="panel-kicker">Step 1</p>
+                      <h3 className="section-title">Select product colors</h3>
+                    </div>
+                    <p className="section-caption">
+                      Search Pantone codes, then configure the exact parts shown on the preview.
+                    </p>
+                  </div>
 
-                  return (
-                    <div
-                      key={part.id}
-                      ref={(node) => {
-                        partCardRefs.current[partIndex] = node;
-                      }}
-                      className={`part-selection-card${isFocusedPart ? " is-focused" : ""}${isMutedPart ? " is-muted" : ""}`}
-                      onClick={() => setFocusedPartId(part.id)}
-                      onPointerEnter={() => setFocusedPartId(part.id)}
-                      onFocusCapture={() => setFocusedPartId(part.id)}
-                    >
-                      <div className="part-selection-head">
-                        <div className="part-selection-copy">
-                          <div className="part-selection-title-row">
-                            <span className="part-index-badge" aria-hidden="true">
-                              {partNumber}
-                            </span>
-                            <label className="control-label" htmlFor={`part-${part.id}`}>
-                              {part.label} Pantone color
-                            </label>
-                          </div>
-                        </div>
-                        <button
-                          id={`part-${part.id}`}
-                          type="button"
-                          className="pantone-trigger"
-                          aria-label={`${part.label} Pantone color`}
-                          aria-expanded={openPartId === part.id}
-                          onClick={() => {
-                            setFocusedPartId(part.id);
-                            setOpenPartId((current) => (current === part.id ? null : part.id));
+                  <div className="form-field">
+                    <label className="control-label" htmlFor="pantoneFilter">
+                      Pantone search
+                    </label>
+                    <input
+                      id="pantoneFilter"
+                      className="input-shell"
+                      type="search"
+                      placeholder="Search Pantone, e.g. 485 C"
+                      value={pantoneFilter}
+                      onChange={(event) => setPantoneFilter(event.target.value)}
+                    />
+                    <p className="fine-print">
+                      {visiblePantoneOptions.length} of {template.pantoneOptions.length} Solid Coated
+                      colors
+                      {pantoneFilter.trim() ? "" : " shown. Search to narrow the list."}
+                    </p>
+                  </div>
+
+                  <div className="part-selection-stack">
+                    {template.colorParts.map((part, partIndex) => {
+                      const selectedPantone = resolveColorOption(
+                        template.pantoneOptions,
+                        partPantones[part.id] || ""
+                      );
+                      const selectedFinish = resolvePartFinishSelection(part, partFinishes[part.id]);
+                      const partNumber = getPartNumberText(part.label, Math.max(partIndex, 0));
+                      const isFocusedPart = activePartId === part.id;
+                      const isMutedPart = Boolean(activePartId) && !isFocusedPart;
+
+                      return (
+                        <div
+                          key={part.id}
+                          ref={(node) => {
+                            partCardRefs.current[partIndex] = node;
                           }}
+                          className={`part-selection-card${isFocusedPart ? " is-focused" : ""}${isMutedPart ? " is-muted" : ""}`}
+                          onClick={() => setFocusedPartId(part.id)}
+                          onPointerEnter={() => setFocusedPartId(part.id)}
+                          onFocusCapture={() => setFocusedPartId(part.id)}
                         >
-                          {selectedPantone ? (
-                            <>
-                              <span
-                                className="color-swatch"
-                                style={{ backgroundColor: selectedPantone.previewHex }}
-                                aria-hidden="true"
-                              />
-                              <span>{selectedPantone.label}</span>
-                            </>
-                          ) : (
-                            <span>Select Pantone</span>
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="quick-color-row">
-                        {quickColorOptions.map((option) => (
-                          <button
-                            key={`${part.id}-${option.code}`}
-                            type="button"
-                            className={`quick-color-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
-                            onClick={() => {
-                              setFocusedPartId(part.id);
-                              setPartPantones((current) => ({
-                                ...current,
-                                [part.id]: option.code
-                              }));
-                            }}
-                          >
-                            <span
-                              className="color-swatch"
-                              style={{ backgroundColor: option.previewHex }}
-                              aria-hidden="true"
-                            />
-                            <span>{option.label}</span>
-                          </button>
-                        ))}
-                      </div>
-
-                      {selectedPantone ? (
-                        <div className="color-preview">
-                          <span
-                            className="color-swatch"
-                            style={{ backgroundColor: selectedPantone.previewHex }}
-                            aria-hidden="true"
-                          />
-                          <span>{selectedPantone.previewHex}</span>
-                        </div>
-                      ) : null}
-
-                      {part.allowedFinishes?.length ? (
-                        <div className="part-finish-field">
-                          <span className="control-label">Material finish</span>
-                          <div className="quick-choice-row" aria-label={`${part.label} finish options`}>
-                            {part.allowedFinishes.map((finish) => (
-                              <button
-                                key={`${part.id}-${finish}`}
-                                type="button"
-                                className={`quick-choice-button${selectedFinish === finish ? " is-active" : ""}`}
-                                onClick={() => {
-                                  setFocusedPartId(part.id);
-                                  setPartFinishes((current) => ({
-                                    ...current,
-                                    [part.id]: finish
-                                  }));
-                                }}
-                              >
-                                {productFinishLabels[finish]}
-                              </button>
-                            ))}
+                          <div className="part-selection-head">
+                            <div className="part-selection-copy">
+                              <div className="part-selection-title-row">
+                                <span className="part-index-badge" aria-hidden="true">
+                                  {partNumber}
+                                </span>
+                                <label className="control-label" htmlFor={`part-${part.id}`}>
+                                  {part.label} Pantone color
+                                </label>
+                              </div>
+                              <p className="fine-print">{part.description}</p>
+                            </div>
+                            <button
+                              id={`part-${part.id}`}
+                              type="button"
+                              className="pantone-trigger"
+                              aria-label={`${part.label} Pantone color`}
+                              aria-expanded={openPartId === part.id}
+                              onClick={() => {
+                                setFocusedPartId(part.id);
+                                setOpenPartId((current) => (current === part.id ? null : part.id));
+                              }}
+                            >
+                              {selectedPantone ? (
+                                <>
+                                  <span
+                                    className="color-swatch"
+                                    style={{ backgroundColor: selectedPantone.previewHex }}
+                                    aria-hidden="true"
+                                  />
+                                  <span>{selectedPantone.label}</span>
+                                </>
+                              ) : (
+                                <span>Select Pantone</span>
+                              )}
+                            </button>
                           </div>
-                        </div>
-                      ) : null}
 
-                      {openPartId === part.id ? (
-                        <div className="pantone-options-shell">
-                          <div
-                            className="pantone-options-list"
-                            role="listbox"
-                            aria-label={part.label}
-                          >
-                            {visiblePantoneOptions.map((option) => (
+                          <div className="quick-color-row">
+                            {quickColorOptions.map((option) => (
                               <button
                                 key={`${part.id}-${option.code}`}
                                 type="button"
-                                className={`pantone-option-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
+                                className={`quick-color-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
                                 onClick={() => {
                                   setFocusedPartId(part.id);
                                   setPartPantones((current) => ({
                                     ...current,
                                     [part.id]: option.code
                                   }));
-                                  setOpenPartId(null);
                                 }}
                               >
                                 <span
@@ -1867,113 +1929,221 @@ export default function MockupGenerator({
                                   style={{ backgroundColor: option.previewHex }}
                                   aria-hidden="true"
                                 />
-                                <span className="pantone-option-label">{option.label}</span>
-                                <span className="pantone-option-meta">{option.previewHex}</span>
+                                <span>{option.label}</span>
                               </button>
                             ))}
                           </div>
+
+                          {selectedPantone ? (
+                            <div className="color-preview">
+                              <span
+                                className="color-swatch"
+                                style={{ backgroundColor: selectedPantone.previewHex }}
+                                aria-hidden="true"
+                              />
+                              <span>{selectedPantone.previewHex}</span>
+                            </div>
+                          ) : null}
+
+                          {part.allowedFinishes?.length ? (
+                            <div className="part-finish-field">
+                              <span className="control-label">Material finish</span>
+                              <div className="quick-choice-row" aria-label={`${part.label} finish options`}>
+                                {part.allowedFinishes.map((finish) => (
+                                  <button
+                                    key={`${part.id}-${finish}`}
+                                    type="button"
+                                    className={`quick-choice-button${selectedFinish === finish ? " is-active" : ""}`}
+                                    onClick={() => {
+                                      setFocusedPartId(part.id);
+                                      setPartFinishes((current) => ({
+                                        ...current,
+                                        [part.id]: finish
+                                      }));
+                                    }}
+                                  >
+                                    {productFinishLabels[finish]}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {openPartId === part.id ? (
+                            <div className="pantone-options-shell">
+                              <div
+                                className="pantone-options-list"
+                                role="listbox"
+                                aria-label={part.label}
+                              >
+                                {visiblePantoneOptions.map((option) => (
+                                  <button
+                                    key={`${part.id}-${option.code}`}
+                                    type="button"
+                                    className={`pantone-option-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
+                                    onClick={() => {
+                                      setFocusedPartId(part.id);
+                                      setPartPantones((current) => ({
+                                        ...current,
+                                        [part.id]: option.code
+                                      }));
+                                      setOpenPartId(null);
+                                    }}
+                                  >
+                                    <span
+                                      className="color-swatch"
+                                      style={{ backgroundColor: option.previewHex }}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="pantone-option-label">{option.label}</span>
+                                    <span className="pantone-option-meta">{option.previewHex}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="form-field">
-                <label className="control-label" htmlFor="logoPrintColor">
-                  Logo print color
-                </label>
-                <select
-                  id="logoPrintColor"
-                  className="input-shell"
-                  value={logoPrintColor}
-                  onChange={(event) => setLogoPrintColor(event.target.value)}
-                  required
-                >
-                  <option value="">Select logo color</option>
-                  {template.allowedLogoPrintColors.map((color) => (
-                    <option key={color} value={color}>
-                      {logoPrintColorLabels[color] || humanizeOption(color)}
-                    </option>
-                  ))}
-                </select>
-                {logoPrintQuickChoices.length ? (
-                  <div className="quick-choice-row" aria-label="Logo color shortcuts">
-                    {logoPrintQuickChoices.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        className={`quick-choice-button${logoPrintColor === color ? " is-active" : ""}`}
-                        onClick={() => setLogoPrintColor(color)}
-                      >
-                        {logoPrintColorLabels[color] || humanizeOption(color)}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="form-field">
-                <label className="control-label" htmlFor="printingMethod">
-                  Printing method
-                </label>
-                <select
-                  id="printingMethod"
-                  className="input-shell"
-                  value={printingMethod}
-                  onChange={(event) => setPrintingMethod(event.target.value)}
-                  required
-                >
-                  <option value="">Select method</option>
-                  {template.allowedPrintingMethods.map((method) => (
-                    <option key={method} value={method}>
-                      {getPrintingMethodPrompt(method).label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-field">
-                <label className="control-label" htmlFor="logoFile">
-                  Client logo
-                </label>
-                <input
-                  id="logoFile"
-                  className="input-shell"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] || null;
-                    if (file && file.size > maxClientLogoSizeBytes) {
-                      setLogoFile(null);
-                      setLogoTransform(createDefaultLogoTransform());
-                      setIsLogoDragging(false);
-                      logoDragStateRef.current = null;
-                      setSubmitError(
-                        "LOGO_FILE_TOO_LARGE: Please upload a logo under 4 MB for Netlify test generation."
                       );
-                      event.target.value = "";
-                      return;
-                    }
+                    })}
+                  </div>
+                </section>
 
-                    setSubmitError(null);
-                    setLogoFile(file);
-                    setLogoTransform(createDefaultLogoTransform());
-                    setIsLogoDragging(false);
-                    logoDragStateRef.current = null;
-                  }}
-                  required
-                />
-                <p className="fine-print">
-                  The uploaded logo image is treated as the only source of truth for the brand
-                  artwork.
-                </p>
-              </div>
+                <section className="form-section">
+                  <div className="form-section-head">
+                    <div>
+                      <p className="panel-kicker">Step 2</p>
+                      <h3 className="section-title">Branding and print controls</h3>
+                    </div>
+                    <p className="section-caption">
+                      Choose the ink behavior and upload the source logo used for the local overlay.
+                    </p>
+                  </div>
 
-              <button className="button-primary" type="submit" disabled={!canGenerate}>
-                {isSubmitting ? "Generating..." : "Generate mockup"}
-              </button>
-            </form>
+                  <div className="form-field">
+                    <label className="control-label" htmlFor="logoPrintColor">
+                      Logo print color
+                    </label>
+                    <select
+                      id="logoPrintColor"
+                      className="input-shell"
+                      value={logoPrintColor}
+                      onChange={(event) => setLogoPrintColor(event.target.value)}
+                      required
+                    >
+                      <option value="">Select logo color</option>
+                      {template.allowedLogoPrintColors.map((color) => (
+                        <option key={color} value={color}>
+                          {logoPrintColorLabels[color] || humanizeOption(color)}
+                        </option>
+                      ))}
+                    </select>
+                    {logoPrintQuickChoices.length ? (
+                      <div className="quick-choice-row" aria-label="Logo color shortcuts">
+                        {logoPrintQuickChoices.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            className={`quick-choice-button${logoPrintColor === color ? " is-active" : ""}`}
+                            onClick={() => setLogoPrintColor(color)}
+                          >
+                            {logoPrintColorLabels[color] || humanizeOption(color)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="form-field">
+                    <label className="control-label" htmlFor="printingMethod">
+                      Printing method
+                    </label>
+                    <select
+                      id="printingMethod"
+                      className="input-shell"
+                      value={printingMethod}
+                      onChange={(event) => setPrintingMethod(event.target.value)}
+                      required
+                    >
+                      <option value="">Select method</option>
+                      {template.allowedPrintingMethods.map((method) => (
+                        <option key={method} value={method}>
+                          {getPrintingMethodPrompt(method).label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="fine-print">Selected method: {primaryPrintMethodLabel}</p>
+                  </div>
+
+                  <div className="form-field">
+                    <label className="control-label" htmlFor="logoFile">
+                      Client logo
+                    </label>
+                    <input
+                      id="logoFile"
+                      className="input-shell"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] || null;
+                        if (file && file.size > maxClientLogoSizeBytes) {
+                          setLogoFile(null);
+                          setLogoTransform(createDefaultLogoTransform());
+                          setIsLogoDragging(false);
+                          logoDragStateRef.current = null;
+                          setSubmitError(
+                            "LOGO_FILE_TOO_LARGE: Please upload a logo under 4 MB for Netlify test generation."
+                          );
+                          event.target.value = "";
+                          return;
+                        }
+
+                        setSubmitError(null);
+                        setLogoFile(file);
+                        setLogoTransform(createDefaultLogoTransform());
+                        setIsLogoDragging(false);
+                        logoDragStateRef.current = null;
+                      }}
+                      required
+                    />
+                    <p className="fine-print">
+                      The uploaded logo image is treated as the only source of truth for the brand
+                      artwork.
+                    </p>
+                  </div>
+                </section>
+
+                <section className="form-section form-submit-section">
+                  <div className="form-section-head">
+                    <div>
+                      <p className="panel-kicker">Step 3</p>
+                      <h3 className="section-title">Generate output</h3>
+                    </div>
+                    <p className="section-caption">
+                      Review the checklist below, then create or refresh the preview.
+                    </p>
+                  </div>
+
+                  <div className="requirements-checklist" aria-label="Generation readiness">
+                    <div className={`requirement-chip${hasAllPartPantones ? " is-complete" : ""}`}>
+                      {hasAllPartPantones ? "All parts selected" : "Select every part color"}
+                    </div>
+                    <div className={`requirement-chip${logoPrintColor ? " is-complete" : ""}`}>
+                      {logoPrintColor ? "Logo color ready" : "Choose logo color"}
+                    </div>
+                    <div className={`requirement-chip${printingMethod ? " is-complete" : ""}`}>
+                      {printingMethod ? "Print method ready" : "Choose print method"}
+                    </div>
+                    <div className={`requirement-chip${logoFile ? " is-complete" : ""}`}>
+                      {logoFile ? "Logo uploaded" : "Upload client logo"}
+                    </div>
+                  </div>
+
+                  <button className="button-primary" type="submit" disabled={!canGenerate}>
+                    {isSubmitting ? "Generating..." : "Generate mockup"}
+                  </button>
+                </section>
+              </form>
+            </div>
 
             {submitError ? <div className="alert-error">{submitError}</div> : null}
 

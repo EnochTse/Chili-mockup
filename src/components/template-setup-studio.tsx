@@ -429,6 +429,7 @@ export default function TemplateSetupStudio({
   );
   const isNewTemplate = selectedSlug === newTemplateKey || !selectedTemplate;
   const canSaveTemplate = canSaveTemplateInCurrentEnvironment();
+  const saveModeLabel = canSaveTemplate ? "Local save enabled" : "Preview only";
 
   function updateIndicatorAnchorField(
     partIndex: number,
@@ -612,14 +613,81 @@ export default function TemplateSetupStudio({
       </header>
 
       <section className="catalog-hero">
-        <div>
+        <div className="hero-copy-stack">
           <p className="eyebrow">Setup studio</p>
           <h1 className="hero-title">Configure product templates in the UI</h1>
+          <p className="hero-support">
+            Maintain template metadata, product parts, finish options, instruction anchors, and
+            asset pairs from one editor before pushing the result back to GitHub.
+          </p>
         </div>
-        <div className="notice-panel">
-          This editor updates local template files, product images, and instruction
-          images inside the current workspace.
+        <div className="hero-aside-stack">
+          <div className="notice-panel">
+            This editor updates local template files, product images, and instruction images inside
+            the current workspace.
+          </div>
+          <div className="hero-stat-grid" aria-label="Setup overview">
+            <article className="stat-card">
+              <span className="stat-label">Templates</span>
+              <strong className="stat-value">{templates.length}</strong>
+              <p className="stat-copy">Products currently available in the local template library.</p>
+            </article>
+            <article className="stat-card">
+              <span className="stat-label">Current mode</span>
+              <strong className="stat-value stat-value-compact">{saveModeLabel}</strong>
+              <p className="stat-copy">
+                {canSaveTemplate
+                  ? "Changes can be saved back into workspace files."
+                  : "Branch deploy can preview edits, but saving is disabled."}
+              </p>
+            </article>
+            <article className="stat-card">
+              <span className="stat-label">Selected parts</span>
+              <strong className="stat-value">{formState.colorParts.length}</strong>
+              <p className="stat-copy">Color-controlled areas in the active template draft.</p>
+            </article>
+          </div>
         </div>
+      </section>
+
+      <section className="workflow-strip" aria-label="Setup workflow">
+        <article className="workflow-step-card">
+          <span className="workflow-step-index">01</span>
+          <div>
+            <h2 className="workflow-step-title">Define the template</h2>
+            <p className="workflow-step-copy">
+              Set the product slug, name, category, description, and size so the library stays clear.
+            </p>
+          </div>
+        </article>
+        <article className="workflow-step-card">
+          <span className="workflow-step-index">02</span>
+          <div>
+            <h2 className="workflow-step-title">Map parts and indicators</h2>
+            <p className="workflow-step-copy">
+              Describe recolorable regions, allowed finishes, and visual callouts on the base image.
+            </p>
+          </div>
+        </article>
+        <article className="workflow-step-card">
+          <span className="workflow-step-index">03</span>
+          <div>
+            <h2 className="workflow-step-title">Save and test</h2>
+            <p className="workflow-step-copy">
+              Update local template files, then reopen the product mockup page to verify the flow.
+            </p>
+          </div>
+        </article>
+      </section>
+
+      <section className="section-heading-row">
+        <div>
+          <p className="panel-kicker">Template workspace</p>
+          <h2 className="section-title">Manage product setup</h2>
+        </div>
+        <p className="section-caption">
+          Keep the list on the left for navigation and use the main form to edit the active template.
+        </p>
       </section>
 
       <div className="setup-layout">
@@ -647,6 +715,12 @@ export default function TemplateSetupStudio({
                 <span className="list-row-meta">{template.category}</span>
               </button>
             ))}
+            <div className="notice-panel sidebar-note-panel">
+              <strong>Recommended flow</strong>
+              <br />
+              Create or select a template, edit parts and indicators, save locally, then open the
+              mockup page to validate the final operator experience.
+            </div>
           </div>
         </aside>
 
@@ -659,6 +733,12 @@ export default function TemplateSetupStudio({
             {formState.slug ? (
               <p className="panel-description">Mockup URL: /mockup/{formState.slug}</p>
             ) : null}
+            <div className="setup-inline-actions">
+              <span className={`status-pill${canSaveTemplate ? " is-complete" : ""}`}>
+                {saveModeLabel}
+              </span>
+              <span className="status-pill">{isNewTemplate ? "Draft template" : "Existing template"}</span>
+            </div>
             {!canSaveTemplate ? (
               <p className="fine-print">
                 This Netlify setup page is preview-only. Save template works on local localhost.
