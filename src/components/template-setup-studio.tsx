@@ -122,6 +122,13 @@ function roundToSingleDecimal(value: number) {
   return Math.round(value * 10) / 10;
 }
 
+function canSaveTemplateInCurrentEnvironment() {
+  if (typeof window === "undefined") return true;
+
+  const hostname = window.location.hostname.toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
 function useResolvedAssetPreview(file: File | null, fallbackUrl: string) {
   const [previewUrl, setPreviewUrl] = useState(fallbackUrl);
 
@@ -361,6 +368,7 @@ export default function TemplateSetupStudio({
     [selectedSlug, templates]
   );
   const isNewTemplate = selectedSlug === newTemplateKey || !selectedTemplate;
+  const canSaveTemplate = canSaveTemplateInCurrentEnvironment();
 
   function updateIndicatorAnchorField(
     partIndex: number,
@@ -398,6 +406,14 @@ export default function TemplateSetupStudio({
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canSaveTemplate) {
+      setSaveError(
+        "Netlify branch deploy 只能預覽 setup studio，不能直接寫回 template 檔案。請在本機 localhost 開啟這個專案後再按 Save template。"
+      );
+      setSaveMessage(null);
+      return;
+    }
+
     setIsSaving(true);
     setSaveError(null);
     setSaveMessage(null);
@@ -423,7 +439,26 @@ export default function TemplateSetupStudio({
         method: "POST",
         body: formData
       });
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: {
+        success?: boolean;
+        error?: string;
+        template?: TemplatePublicDto;
+      } = {};
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText) as typeof data;
+        } catch {
+          if (responseText.trim().startsWith("<")) {
+            throw new Error(
+              "目前這個部署環境沒有 template save API。Netlify branch deploy 只能預覽，不能直接儲存到 repo。請改在本機 localhost 使用 Setup studio。"
+            );
+          }
+
+          throw new Error("Save template 回傳了非 JSON 內容，請稍後再試。");
+        }
+      }
 
       if (!response.ok || !data.success || !data.template) {
         throw new Error(data.error || "Failed to save the product template.");
@@ -508,6 +543,11 @@ export default function TemplateSetupStudio({
             </h2>
             {formState.slug ? (
               <p className="panel-description">Mockup URL: /mockup/{formState.slug}</p>
+            ) : null}
+            {!canSaveTemplate ? (
+              <p className="fine-print">
+                This Netlify setup page is preview-only. Save template works on local localhost.
+              </p>
             ) : null}
           </div>
 
@@ -1006,8 +1046,17 @@ export default function TemplateSetupStudio({
                     Open mockup
                   </Link>
                 ) : null}
-                <button className="button-primary" type="submit" disabled={isSaving}>
-                  {isSaving ? "Saving..." : "Save template"}
+                <button
+                  className="button-primary"
+                  type="submit"
+                  disabled={isSaving || !canSaveTemplate}
+                  title={
+                    canSaveTemplate
+                      ? "Save template"
+                      : "Save template is available on local localhost only"
+                  }
+                >
+                  {isSaving ? "Saving..." : canSaveTemplate ? "Save template" : "Local save only"}
                 </button>
               </div>
             </div>
