@@ -718,11 +718,13 @@ input[type="file"].input-shell::file-selector-button {
   position: absolute;
   inset: 0;
   user-select: none;
+  pointer-events: none;
 }
 
 .indicator-visual-anchor {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 .indicator-visual-line {
@@ -738,6 +740,7 @@ input[type="file"].input-shell::file-selector-button {
   position: absolute;
   border: 0;
   cursor: grab;
+  pointer-events: auto;
   touch-action: none;
   transition:
     transform var(--motion-fast) var(--motion-ease),
@@ -765,6 +768,7 @@ input[type="file"].input-shell::file-selector-button {
   align-items: center;
   gap: var(--spacing-8);
   min-height: 36px;
+  max-width: min(220px, calc(100% - 24px));
   padding: 0 12px 0 4px;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.92);
@@ -797,6 +801,10 @@ input[type="file"].input-shell::file-selector-button {
 .indicator-visual-anchor.is-active .indicator-visual-label {
   box-shadow: 0 0 0 2px rgba(4, 71, 255, 0.16), 0 12px 28px rgba(0, 0, 0, 0.12);
   transform: translate(-50%, -50%) scale(1.02);
+}
+
+.indicator-visual-anchor.is-active {
+  z-index: 2;
 }
 
 .indicator-anchor-card {
@@ -921,10 +929,9 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .part-selection-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--spacing-12);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-10, 10px);
 }
 
 .part-selection-copy {
@@ -1021,7 +1028,8 @@ input[type="file"].input-shell::file-selector-button {
   align-items: center;
   gap: var(--spacing-8);
   min-height: 42px;
-  min-width: 220px;
+  min-width: 0;
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: #ffffff;
@@ -1029,6 +1037,7 @@ input[type="file"].input-shell::file-selector-button {
   color: var(--color-obsidian);
   cursor: pointer;
   padding: 0 var(--spacing-12);
+  justify-content: flex-start;
   transition:
     color var(--motion-fast) ease,
     background-color var(--motion-fast) ease,

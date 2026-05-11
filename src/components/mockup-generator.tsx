@@ -1728,16 +1728,6 @@ export default function MockupGenerator({
                               {part.label} Pantone color
                             </label>
                           </div>
-                          <p className="fine-print">{part.description}</p>
-                          {part.instructionCue ? (
-                            <p className="fine-print">Instruction cue: {part.instructionCue}</p>
-                          ) : null}
-                          {part.indicatorAnchors?.length ? (
-                            <p className="fine-print">
-                              {part.indicatorAnchors.length} location
-                              {part.indicatorAnchors.length > 1 ? "s" : ""} on preview
-                            </p>
-                          ) : null}
                         </div>
                         <button
                           id={`part-${part.id}`}

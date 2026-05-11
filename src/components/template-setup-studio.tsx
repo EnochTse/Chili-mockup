@@ -272,7 +272,6 @@ function PartIndicatorVisualEditor({
               <div
                 key={anchor.id}
                 className={`indicator-visual-anchor${isActive ? " is-active" : ""}`}
-                onPointerDown={() => setActiveAnchorId(anchor.id)}
               >
                 <div
                   className="indicator-visual-line"
