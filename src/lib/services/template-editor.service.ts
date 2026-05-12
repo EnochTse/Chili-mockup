@@ -246,6 +246,11 @@ async function exists(targetPath: string) {
   }
 }
 
+function buildPartMaskAssetFileName(partId: string, file: File, index: number) {
+  const extension = path.extname(file.name).toLowerCase();
+  return `${partId}-mask-${Date.now()}-${index + 1}${extension}`;
+}
+
 export async function saveTemplateFromFormData(formData: FormData): Promise<TemplatePublicDto> {
   const originalSlug = readOptionalString(formData, "originalSlug");
   const slug = readRequiredString(formData, "slug");
@@ -330,6 +335,25 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     );
   }
 
+  const colorPartsWithUploadedMasks = [...colorParts];
+  for (const [index, part] of colorPartsWithUploadedMasks.entries()) {
+    const uploadedPartMask = validateImageFile(
+      formData.get(`partMaskImage:${index}`) as File | null,
+      `part mask image for ${part.label}`
+    );
+
+    if (!uploadedPartMask) {
+      continue;
+    }
+
+    const partMaskImageFileName = buildPartMaskAssetFileName(part.id, uploadedPartMask, index);
+    await writeFileFromUpload(path.resolve(assetDir, partMaskImageFileName), uploadedPartMask);
+    colorPartsWithUploadedMasks[index] = {
+      ...part,
+      partMaskImageFileName
+    };
+  }
+
   const template = {
     id: slug,
     slug,
@@ -346,7 +370,7 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     defaultLogoPrintColor: existingTemplate?.defaultLogoPrintColor || "white",
     allowedPrintingMethods: existingTemplate?.allowedPrintingMethods || defaultPrintingMethods,
     pantoneLibrary: "pantone-solid-coated-v3",
-    colorParts,
+    colorParts: colorPartsWithUploadedMasks,
     logoPlacement:
       existingTemplate?.logoPlacement || {
         description: "Place the logo only inside the marked safe area from the instruction image.",

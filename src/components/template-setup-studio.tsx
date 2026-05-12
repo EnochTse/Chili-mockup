@@ -412,6 +412,7 @@ export default function TemplateSetupStudio({
   const [formState, setFormState] = useState<EditorFormState>(
     initialTemplates[0] ? buildFormStateFromTemplate(initialTemplates[0]) : makeBlankFormState()
   );
+  const [partMaskFiles, setPartMaskFiles] = useState<Record<string, File | null>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -452,6 +453,7 @@ export default function TemplateSetupStudio({
     if (slug === newTemplateKey) {
       setSelectedSlug(newTemplateKey);
       setFormState(makeBlankFormState());
+      setPartMaskFiles({});
       setSaveError(null);
       setSaveMessage(null);
       return;
@@ -462,8 +464,16 @@ export default function TemplateSetupStudio({
 
     setSelectedSlug(slug);
     setFormState(buildFormStateFromTemplate(template));
+    setPartMaskFiles({});
     setSaveError(null);
     setSaveMessage(null);
+  }
+
+  function handlePartMaskFileChange(partId: string, file: File | null) {
+    setPartMaskFiles((current) => ({
+      ...current,
+      [partId]: file
+    }));
   }
 
   async function handleCopyAllIndicators() {
@@ -551,6 +561,12 @@ export default function TemplateSetupStudio({
       if (formState.instructionImageFile) {
         formData.append("instructionImage", formState.instructionImageFile);
       }
+      formState.colorParts.forEach((part, index) => {
+        const partMaskFile = partMaskFiles[part.id];
+        if (partMaskFile) {
+          formData.append(`partMaskImage:${index}`, partMaskFile);
+        }
+      });
 
       const response = await fetch("/api/template-admin/save", {
         method: "POST",
@@ -588,6 +604,7 @@ export default function TemplateSetupStudio({
       setTemplates(nextTemplates);
       setSelectedSlug(savedTemplate.slug);
       setFormState(buildFormStateFromTemplate(savedTemplate));
+      setPartMaskFiles({});
       setSaveMessage("Product template saved locally.");
       startTransition(() => {
         router.refresh();
@@ -1050,6 +1067,36 @@ export default function TemplateSetupStudio({
                       {` `}
                       to give Gemini an isolated location reference for this exact part.
                     </p>
+                    <div className="setup-inline-actions">
+                      <label className="secondary-link-button" htmlFor={`partMaskUpload-${part.id}`}>
+                        Upload mask image
+                      </label>
+                      <input
+                        id={`partMaskUpload-${part.id}`}
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.webp"
+                        hidden
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] || null;
+                          handlePartMaskFileChange(part.id, file);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                      {partMaskFiles[part.id] ? (
+                        <button
+                          type="button"
+                          className="secondary-link-button"
+                          onClick={() => handlePartMaskFileChange(part.id, null)}
+                        >
+                          Clear pending mask
+                        </button>
+                      ) : null}
+                    </div>
+                    {partMaskFiles[part.id] ? (
+                      <p className="fine-print">Pending mask upload: {partMaskFiles[part.id]?.name}</p>
+                    ) : part.partMaskImageFileName ? (
+                      <p className="fine-print">Current mask asset: {part.partMaskImageFileName}</p>
+                    ) : null}
 
                     <div className="setup-subsection">
                       <div className="setup-subsection-head">
