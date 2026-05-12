@@ -772,6 +772,7 @@ export default function MockupGenerator({
   const formPanelRef = useRef<HTMLElement | null>(null);
   const renderPreviewShellRef = useRef<HTMLDivElement | null>(null);
   const formSectionRefs = useRef<Array<HTMLElement | null>>([]);
+  const [activeFormSectionIndex, setActiveFormSectionIndex] = useState(0);
 
   const showDebug =
     process.env.NODE_ENV === "development" ||
@@ -968,6 +969,45 @@ export default function MockupGenerator({
   }, [template?.slug, template?.colorParts.length]);
 
   useEffect(() => {
+    const sections = formSectionRefs.current.filter(
+      (section): section is HTMLElement => Boolean(section)
+    );
+    if (!sections.length || typeof IntersectionObserver === "undefined") return;
+
+    const ratios = new Map<number, number>();
+
+    const updateActiveSection = () => {
+      const [nextSection] = Array.from(ratios.entries()).sort((left, right) => right[1] - left[1]);
+      if (nextSection && nextSection[1] > 0) {
+        setActiveFormSectionIndex(nextSection[0]);
+      }
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const index = Number((entry.target as HTMLElement).dataset.formSectionIndex || "0");
+          ratios.set(index, entry.isIntersecting ? entry.intersectionRatio : 0);
+        });
+        updateActiveSection();
+      },
+      {
+        threshold: [0.15, 0.3, 0.5, 0.7, 0.9],
+        rootMargin: "-16% 0px -38% 0px"
+      }
+    );
+
+    sections.forEach((section, index) => {
+      section.dataset.formSectionIndex = String(index);
+      ratios.set(index, index === 0 ? 1 : 0);
+      observer.observe(section);
+    });
+    updateActiveSection();
+
+    return () => observer.disconnect();
+  }, [template?.slug]);
+
+  useEffect(() => {
     clearPreviewRetryTimeout();
     previewRetryCountRef.current = 0;
 
@@ -1145,6 +1185,12 @@ export default function MockupGenerator({
       };
     });
   }, [activePart, renderPreviewShellSize]);
+  const formStepDots = [
+    { kicker: "Step 1", label: "Colours" },
+    { kicker: "Step 2", label: "Branding" },
+    { kicker: "Step 3", label: "Generate" },
+    { kicker: "Step 4", label: "Adjust" }
+  ];
 
   function updateLogoTransform(next: LogoTransform | ((current: LogoTransform) => LogoTransform)) {
     setLogoTransform((current) =>
@@ -1166,6 +1212,12 @@ export default function MockupGenerator({
   function handleSaveImage() {
     if (!displayedMockupImageUrl) return;
     downloadImageUrl(displayedMockupImageUrl, `chili-mockup-${productSlug}.png`);
+  }
+
+  function scrollToFormSection(index: number) {
+    const section = formSectionRefs.current[index];
+    if (!section) return;
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function handleLogoPointerDown(event: React.PointerEvent<HTMLImageElement>) {
@@ -1572,7 +1624,7 @@ export default function MockupGenerator({
                 ) : null}
               </div>
 
-              {result?.imageUrl ? (
+              {false ? (
                 <div className="render-meta">
                   <div className="logo-adjust-panel">
                       <div className="logo-adjust-head">
@@ -1700,6 +1752,21 @@ export default function MockupGenerator({
           </div>
 
           <section className="form-panel" ref={formPanelRef}>
+            <div className="form-panel-rail">
+              <nav className="form-section-dots" aria-label="Configuration step navigation">
+                {formStepDots.map((step, index) => (
+                  <button
+                    key={step.label}
+                    type="button"
+                    className={`form-section-dot${activeFormSectionIndex === index ? " is-active" : ""}`}
+                    aria-label={`${step.kicker}: ${step.label}`}
+                    aria-current={activeFormSectionIndex === index ? "step" : undefined}
+                    title={`${step.kicker}: ${step.label}`}
+                    onClick={() => scrollToFormSection(index)}
+                  />
+                ))}
+              </nav>
+            </div>
             <div className="surface config-panel-shell">
               <div className="panel-head config-panel-head">
                 <div>
@@ -2060,6 +2127,154 @@ export default function MockupGenerator({
                   <button className="button-primary" type="submit" disabled={!canGenerate}>
                     {isSubmitting ? "Generating..." : "Generate mockup"}
                   </button>
+                </section>
+
+                <section
+                  className="form-section form-adjust-section"
+                  ref={(node) => {
+                    formSectionRefs.current[3] = node;
+                  }}
+                >
+                  <div className="form-section-head">
+                    <div>
+                      <p className="panel-kicker">Step 4</p>
+                      <h3 className="section-title">Adjust logo placement</h3>
+                    </div>
+                    <p className="section-caption">
+                      Keep the preview pinned on the left while refining the logo placement here.
+                    </p>
+                  </div>
+
+                  {displayedMockupImageUrl ? (
+                    <div className="logo-adjust-panel">
+                      <div className="logo-adjust-head">
+                        <div>
+                          <p className="logo-adjust-title">Logo position adjustment</p>
+                          <p className="fine-print">
+                            Drag the preview image on the left, or fine-tune the logo with the
+                            controls below. This does not regenerate the AI image.
+                          </p>
+                        </div>
+                        <div className="logo-adjust-actions">
+                          <button
+                            className="icon-action-button"
+                            type="button"
+                            title="Rotate 90 degrees counterclockwise"
+                            aria-label="Rotate 90 degrees counterclockwise"
+                            onClick={() => rotateLogoBy(-logoQuarterTurnDegrees)}
+                            disabled={!canAdjustLogo}
+                          >
+                            -90
+                          </button>
+                          <button
+                            className="icon-action-button"
+                            type="button"
+                            title="Rotate 90 degrees clockwise"
+                            aria-label="Rotate 90 degrees clockwise"
+                            onClick={() => rotateLogoBy(logoQuarterTurnDegrees)}
+                            disabled={!canAdjustLogo}
+                          >
+                            +90
+                          </button>
+                          <button
+                            className="secondary-link-button logo-reset-button"
+                            type="button"
+                            onClick={resetLogoTransform}
+                            disabled={!canAdjustLogo}
+                          >
+                            Reset
+                          </button>
+                          <button
+                            className="secondary-link-button"
+                            type="button"
+                            onClick={handleSaveImage}
+                            disabled={!canSaveImage}
+                          >
+                            Save image
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="logo-adjust-grid" aria-disabled={!canAdjustLogo}>
+                        <label className="logo-slider-row" htmlFor="logoOffsetX">
+                          <span>Move X</span>
+                          <input
+                            id="logoOffsetX"
+                            type="range"
+                            min="-35"
+                            max="35"
+                            step="1"
+                            value={logoMoveXPercent}
+                            disabled={!canAdjustLogo}
+                            onChange={(event) => {
+                              const value = Number(event.currentTarget.value) / 100;
+                              updateLogoTransform((current) => ({
+                                ...current,
+                                offsetX: value
+                              }));
+                            }}
+                          />
+                          <output>{logoMoveXPercent}%</output>
+                        </label>
+
+                        <label className="logo-slider-row" htmlFor="logoOffsetY">
+                          <span>Move Y</span>
+                          <input
+                            id="logoOffsetY"
+                            type="range"
+                            min="-35"
+                            max="35"
+                            step="1"
+                            value={logoMoveYPercent}
+                            disabled={!canAdjustLogo}
+                            onChange={(event) => {
+                              const value = Number(event.currentTarget.value) / 100;
+                              updateLogoTransform((current) => ({
+                                ...current,
+                                offsetY: value
+                              }));
+                            }}
+                          />
+                          <output>{logoMoveYPercent}%</output>
+                        </label>
+
+                        <label className="logo-slider-row" htmlFor="logoScale">
+                          <span>Scale</span>
+                          <input
+                            id="logoScale"
+                            type="range"
+                            min="35"
+                            max="220"
+                            step="1"
+                            value={logoScalePercent}
+                            disabled={!canAdjustLogo}
+                            onChange={(event) => {
+                              const value = Number(event.currentTarget.value) / 100;
+                              updateLogoTransform((current) => ({
+                                ...current,
+                                scale: value
+                              }));
+                            }}
+                          />
+                          <output>{logoScalePercent}%</output>
+                        </label>
+
+                        <div className="logo-slider-row logo-rotation-readout">
+                          <span>Rotate</span>
+                          <div className="rotation-readout-track" aria-hidden="true" />
+                          <output>{logoRotationDegrees}deg</output>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="logo-adjust-empty">
+                      <p className="logo-adjust-empty-title">Generate a preview first</p>
+                      <p className="fine-print">
+                        Once the mockup is rendered, the logo adjustment controls stay in this step
+                        while the product preview remains fixed on the left.
+                      </p>
+                    </div>
+                  )}
                 </section>
               </form>
             </div>

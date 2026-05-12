@@ -345,6 +345,13 @@ summary:focus-visible {
   min-width: 0;
 }
 
+@media (min-width: 981px) {
+  .workflow-main {
+    position: sticky;
+    top: var(--spacing-24);
+  }
+}
+
 .setup-layout {
   display: grid;
   grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
@@ -767,10 +774,57 @@ summary:focus-visible {
 .form-panel {
   position: relative;
   align-self: start;
-  padding: 0;
+  padding: 0 44px 0 0;
   background: transparent;
   border: 0;
   box-shadow: none;
+}
+
+.form-panel-rail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+}
+
+.form-section-dots {
+  position: sticky;
+  top: 50vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  transform: translateY(-50%);
+}
+
+.form-section-dot {
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 9999px;
+  background: rgba(15, 16, 18, 0.14);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background-color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) ease;
+}
+
+.form-section-dot:hover {
+  background: rgba(15, 16, 18, 0.34);
+  transform: scale(1.15);
+}
+
+.form-section-dot.is-active {
+  background: var(--color-obsidian);
+  transform: scale(1.32);
+}
+
+.form-section-dot:focus-visible {
+  outline: 2px solid rgba(15, 16, 18, 0.35);
+  outline-offset: 4px;
 }
 
 .config-panel-shell {
@@ -850,6 +904,11 @@ summary:focus-visible {
 
 .form-submit-section {
   background: linear-gradient(180deg, rgba(15, 16, 18, 0.03), rgba(15, 16, 18, 0.01));
+}
+
+.form-adjust-section {
+  min-height: auto;
+  padding-bottom: 0;
 }
 
 .requirements-checklist {
@@ -1518,13 +1577,6 @@ input[type="file"].input-shell::file-selector-button {
     linear-gradient(180deg, #fbfbfc 0%, #f1f1f3 100%);
 }
 
-@media (min-width: 981px) {
-  .render-stage {
-    position: sticky;
-    top: var(--spacing-24);
-  }
-}
-
 .render-preview-shell {
   position: relative;
   width: min(100%, 1160px);
@@ -1741,7 +1793,7 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .render-meta {
-  padding: var(--spacing-20) var(--spacing-8) 0;
+  display: none;
 }
 
 .result-frame {
@@ -1757,9 +1809,13 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .logo-adjust-panel {
-  margin-top: var(--spacing-20);
-  padding-top: var(--spacing-20);
-  border-top: 1px solid var(--border);
+  display: grid;
+  gap: var(--spacing-16);
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow-card);
 }
 
 .logo-adjust-head {
@@ -1813,7 +1869,6 @@ input[type="file"].input-shell::file-selector-button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-12) var(--spacing-16);
-  margin-top: var(--spacing-16);
 }
 
 .logo-slider-row {
@@ -1846,6 +1901,22 @@ input[type="file"].input-shell::file-selector-button {
   height: 8px;
   border-radius: 9999px;
   background: linear-gradient(90deg, #d4d4d8 0%, #f4f4f5 50%, #d4d4d8 100%);
+}
+
+.logo-adjust-empty {
+  display: grid;
+  gap: var(--spacing-12);
+  padding: 24px;
+  border: 1px dashed rgba(15, 16, 18, 0.16);
+  border-radius: var(--radius-card);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.logo-adjust-empty-title {
+  margin: 0;
+  color: var(--color-obsidian);
+  font-size: var(--text-body);
+  font-weight: 500;
 }
 
 .instruction-modal-backdrop {
@@ -1988,6 +2059,11 @@ input[type="file"].input-shell::file-selector-button {
 
   .form-panel {
     position: static;
+    padding-right: 0;
+  }
+
+  .form-panel-rail {
+    display: none;
   }
 
   .form-section {
