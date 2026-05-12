@@ -99,6 +99,7 @@ function sanitizeColorParts(
     description?: string;
     instructionCue?: string;
     instructionColorHex?: string;
+    partMaskImageFileName?: string;
     defaultPantoneCode?: string;
     allowedFinishes?: unknown;
     defaultFinish?: string;
@@ -194,6 +195,7 @@ function sanitizeColorParts(
         description: (part.description || "").trim() || `Color-controlled region ${index + 1}.`,
         instructionCue: (part.instructionCue || "").trim() || undefined,
         instructionColorHex: (part.instructionColorHex || "").trim() || undefined,
+        partMaskImageFileName: (part.partMaskImageFileName || "").trim() || undefined,
         defaultPantoneCode: (part.defaultPantoneCode || "").trim() || undefined,
         allowedFinishes: sanitizeAllowedFinishes(part.allowedFinishes),
         defaultFinish: resolvePartDefaultFinish({
@@ -262,6 +264,7 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
         description?: string;
         instructionCue?: string;
         instructionColorHex?: string;
+        partMaskImageFileName?: string;
         defaultPantoneCode?: string;
         allowedFinishes?: unknown;
         defaultFinish?: string;

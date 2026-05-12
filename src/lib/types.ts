@@ -17,10 +17,20 @@ export interface ProductColorPart {
   description: string;
   instructionCue?: string;
   instructionColorHex?: string;
+  partMaskImageFileName?: string;
   defaultPantoneCode?: string;
   allowedFinishes?: ProductFinishOption[];
   defaultFinish?: ProductFinishOption;
   indicatorAnchors?: PartIndicatorAnchor[];
+}
+
+export interface TemplatePublicColorPart extends ProductColorPart {
+  partMaskImageUrl?: string;
+}
+
+export interface ResolvedProductColorPart extends ProductColorPart {
+  partMaskImagePath?: string;
+  partMaskImagePublicUrl?: string;
 }
 
 export interface PartIndicatorAnchor {
@@ -73,7 +83,8 @@ export interface ProductTemplate {
   constraints: TemplateConstraints;
 }
 
-export interface ResolvedProductTemplate extends ProductTemplate {
+export interface ResolvedProductTemplate extends Omit<ProductTemplate, "colorParts"> {
+  colorParts: ResolvedProductColorPart[];
   baseImagePublicUrl: string;
   instructionImagePublicUrl: string;
   baseProductImagePath: string;
@@ -106,7 +117,7 @@ export interface TemplatePublicDto {
   defaultLogoPrintColor: string;
   allowedPrintingMethods: string[];
   pantoneOptions: PantoneOption[];
-  colorParts: ProductColorPart[];
+  colorParts: TemplatePublicColorPart[];
   logoPlacement: LogoPlacement;
   constraints: TemplateConstraints;
 }
@@ -117,6 +128,8 @@ export interface SelectedPartPantone {
   partDescription: string;
   instructionCue?: string;
   instructionColorHex?: string;
+  partMaskImagePath?: string;
+  partMaskImageUrl?: string;
   pantoneCode: string;
   pantone: PantoneOption;
   selectedFinish?: ProductFinishOption;

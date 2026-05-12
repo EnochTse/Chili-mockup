@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { AppError } from "@/lib/errors";
 
-type AssetKind = "base" | "instruction";
+type AssetKind = "base" | "instruction" | "part_mask";
 
 const bannedAssetWords = [
   "starter",
@@ -193,10 +193,16 @@ export async function validateTemplateAsset(assetPath: string, kind: AssetKind) 
     buffer = await fs.readFile(assetPath);
   } catch {
     throw new AppError(
-      kind === "base" ? "MISSING_BASE_IMAGE" : "MISSING_INSTRUCTION_IMAGE",
+      kind === "base"
+        ? "MISSING_BASE_IMAGE"
+        : kind === "instruction"
+          ? "MISSING_INSTRUCTION_IMAGE"
+          : "MISSING_INSTRUCTION_IMAGE",
       kind === "base"
         ? "The product template image could not be found. Please check the product assets."
-        : "The instruction image could not be found. Please check the product template.",
+        : kind === "instruction"
+          ? "The instruction image could not be found. Please check the product template."
+          : "A per-part mask image could not be found. Please check the product template.",
       500
     );
   }

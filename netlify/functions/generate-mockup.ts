@@ -135,6 +135,8 @@ function validatePartPantones(body: GenerateMockupJsonBody, template: Awaited<Re
       partDescription: part.description,
       instructionCue: part.instructionCue,
       instructionColorHex: part.instructionColorHex,
+      partMaskImagePath: part.partMaskImagePath,
+      partMaskImageUrl: part.partMaskImagePublicUrl,
       pantoneCode,
       pantone,
       selectedFinish: resolvePartFinishSelection(part, requestedFinish)
@@ -224,6 +226,9 @@ export default async function handler(request: Request) {
       prompt,
       baseProductImagePath: template.baseProductImagePath,
       instructionImagePath: template.instructionImagePath,
+      partMaskImagePaths: selectedPartPantones
+        .map((selection) => selection.partMaskImagePath)
+        .filter(Boolean) as string[],
       productSlug,
       outputDir: getGeneratedOutputDir()
     });
@@ -259,6 +264,9 @@ export default async function handler(request: Request) {
               baseImagePath: template.baseProductImagePath,
               baseProductImagePath: template.baseProductImagePath,
               instructionImagePath: template.instructionImagePath,
+              partMaskImagePaths: selectedPartPantones
+                .map((selection) => selection.partMaskImagePath)
+                .filter(Boolean),
               logoFileName: savedLogo.logoFileName,
               promptUsed: prompt
             }

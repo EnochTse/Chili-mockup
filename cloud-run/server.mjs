@@ -134,6 +134,15 @@ function readImageUrl(value, fieldName) {
   }
 }
 
+function readOptionalImageUrlArray(value, fieldName) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw appError("INVALID_FORM_DATA", `${fieldName} must be an array of http(s) URLs.`, 400);
+  }
+
+  return value.map((item, index) => readImageUrl(item, `${fieldName}[${index}]`));
+}
+
 async function fetchImageAsInlinePart(imageUrl) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -258,10 +267,12 @@ async function generateMockup(body) {
   const prompt = readRequiredString(body.prompt, "prompt");
   const baseProductImageUrl = readImageUrl(body.baseProductImageUrl, "baseProductImageUrl");
   const instructionImageUrl = readImageUrl(body.instructionImageUrl, "instructionImageUrl");
+  const partMaskImageUrls = readOptionalImageUrlArray(body.partMaskImageUrls, "partMaskImageUrls");
   const contents = [
     { text: prompt },
     await fetchImageAsInlinePart(baseProductImageUrl),
-    await fetchImageAsInlinePart(instructionImageUrl)
+    await fetchImageAsInlinePart(instructionImageUrl),
+    ...(await Promise.all(partMaskImageUrls.map((imageUrl) => fetchImageAsInlinePart(imageUrl))))
   ];
 
   let response;
@@ -306,6 +317,7 @@ async function generateMockup(body) {
             productSlug,
             baseProductImageUrl,
             instructionImageUrl,
+            partMaskImageUrls,
             promptUsed: prompt
           }
         }

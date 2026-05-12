@@ -41,6 +41,7 @@ interface GenerateResponse {
     baseImagePath?: string;
     baseProductImagePath: string;
     instructionImagePath: string;
+    partMaskImagePaths?: string[];
     logoFileName: string;
     promptUsed: string;
   };
@@ -241,6 +242,7 @@ function buildSelectedPartPantones(
       partDescription: part.description,
       instructionCue: part.instructionCue,
       instructionColorHex: part.instructionColorHex,
+      partMaskImageUrl: part.partMaskImageUrl,
       pantoneCode,
       pantone,
       selectedFinish: resolvePartFinishSelection(part, partFinishes[part.id])
@@ -1336,7 +1338,11 @@ export default function MockupGenerator({
                 printingMethod
               }),
               baseProductImageUrl: toAbsoluteAssetUrl(template.baseImageUrl),
-              instructionImageUrl: toAbsoluteAssetUrl(template.instructionImageUrl)
+              instructionImageUrl: toAbsoluteAssetUrl(template.instructionImageUrl),
+              partMaskImageUrls: selectedPartPantones
+                .map((selection) => selection.partMaskImageUrl)
+                .filter(Boolean)
+                .map((assetUrl) => toAbsoluteAssetUrl(assetUrl as string))
             })
           },
           directGenerateTimeoutMs

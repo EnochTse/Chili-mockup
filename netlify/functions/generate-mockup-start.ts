@@ -138,6 +138,8 @@ function validatePartPantones(
       partDescription: part.description,
       instructionCue: part.instructionCue,
       instructionColorHex: part.instructionColorHex,
+      partMaskImagePath: part.partMaskImagePath,
+      partMaskImageUrl: part.partMaskImagePublicUrl,
       pantoneCode,
       pantone,
       selectedFinish: resolvePartFinishSelection(part, requestedFinish)
@@ -227,6 +229,9 @@ export default async function handler(request: Request) {
       prompt,
       baseProductImagePath: template.baseProductImagePath,
       instructionImagePath: template.instructionImagePath,
+      partMaskImagePaths: selectedPartPantones
+        .map((selection) => selection.partMaskImagePath)
+        .filter(Boolean) as string[],
       productSlug,
       outputDir: getGeneratedOutputDir()
     });
@@ -246,6 +251,9 @@ export default async function handler(request: Request) {
               stubMode: result.stubMode,
               templateId: template.id,
               productSlug,
+              partMaskImagePaths: selectedPartPantones
+                .map((selection) => selection.partMaskImagePath)
+                .filter(Boolean),
               logoFileName: validatedLogo.logoFileName,
               promptUsed: prompt
             }

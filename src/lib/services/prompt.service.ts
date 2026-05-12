@@ -60,6 +60,19 @@ const finishPromptMap: Record<ProductFinishOption, string> = {
   metallic: "metallic finish with subtle specular highlights and a reflective material character"
 };
 
+export function getImageReferenceLabel(index: number) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let normalized = index;
+  let label = "";
+
+  do {
+    label = alphabet[normalized % 26] + label;
+    normalized = Math.floor(normalized / 26) - 1;
+  } while (normalized >= 0);
+
+  return `Image ${label}`;
+}
+
 export function buildMockupPrompt(params: {
   template: PromptTemplateInput;
   selectedPartPantones: SelectedPartPantone[];
@@ -68,6 +81,16 @@ export function buildMockupPrompt(params: {
 }) {
   const method = getPrintingMethodPrompt(params.printingMethod);
   const constraints = params.template.constraints;
+  const selectedPartMasks = params.selectedPartPantones
+    .map((selection, index) =>
+      selection.partMaskImagePath || selection.partMaskImageUrl
+        ? {
+            partLabel: selection.partLabel,
+            imageReferenceLabel: getImageReferenceLabel(index + 2)
+          }
+        : null
+    )
+    .filter(Boolean) as Array<{ partLabel: string; imageReferenceLabel: string }>;
   const partLines = params.selectedPartPantones
     .map((selection, index) =>
       [
@@ -78,6 +101,9 @@ export function buildMockupPrompt(params: {
           : "",
         selection.instructionColorHex
           ? `   Instruction overlay color: ${selection.instructionColorHex}`
+          : "",
+        selection.partMaskImagePath || selection.partMaskImageUrl
+          ? `   Isolated part mask reference: ${getImageReferenceLabel(index + 2)}`
           : "",
         `   Requested color: ${selection.pantone.label} (${selection.pantone.previewHex})`,
         selection.selectedFinish
@@ -94,13 +120,24 @@ export function buildMockupPrompt(params: {
           .map((specification) => `- ${specification.label}: ${specification.value}`)
           .join("\n")
       : "- No extra product specifications provided.";
+  const extraMaskInstructions = selectedPartMasks.length
+    ? [
+        "Additional isolated part-mask references:",
+        ...selectedPartMasks.map(
+          ({ partLabel, imageReferenceLabel }) =>
+            `- ${imageReferenceLabel} isolates only ${partLabel}. Use it as a hard location cue for that exact part only.`
+        )
+      ].join("\n")
+    : "Additional isolated part-mask references: none supplied for this product.";
 
   return `
 Create a photorealistic product mockup for Chili.
 
 Image A is the original product photo. Use it as the base product photo.
-Image B is the instruction image. Treat Image B as the authoritative part map. Match each requested color only to its corresponding part cue from Image B. Do not swap colors between parts, do not merge multiple parts into one recolor decision, and do not recolor any surface that is not explicitly listed below.
-All colored masks, green boxes, outlines, rectangles, arrows, labels, and other instructional overlays in Image B are guide marks only. Use them only to locate the approved areas and never render, print, emboss, engrave, stitch, or leave those guide marks visible in the final mockup.
+Image B is the full instruction image. Treat Image B as the master part map across the whole product.
+If additional isolated part-mask reference images are supplied after Image B, each one applies only to its named part below. These isolated masks are stronger location evidence than text alone and must be used to prevent color spill into neighboring parts.
+Match each requested color only to its corresponding part cues. Do not swap colors between parts, do not merge multiple parts into one recolor decision, and do not recolor any surface that is not explicitly listed below.
+All colored masks, red masks, green boxes, outlines, rectangles, arrows, labels, and other instructional overlays in Image B or any later reference images are guide marks only. Use them only to locate the approved areas and never render, print, emboss, engrave, stitch, or leave those guide marks visible in the final mockup.
 The uploaded client logo will be applied later by the application as a separate locked overlay. Do not create, draw, place, infer, reconstruct, or render any logo in this Gemini output.
 
 Product: ${params.template.name}
@@ -108,6 +145,10 @@ Product slug: ${params.template.slug}
 Product size: ${params.template.size || "Not specified"}
 Product specifications:
 ${specificationLines}
+Reference image map:
+- Image A: original product photo
+- Image B: full instruction image
+${extraMaskInstructions}
 Authoritative part map:
 ${partLines}
 Logo print color selected for the later overlay step: ${params.logoPrintColor}
@@ -124,6 +165,7 @@ Leave the approved logo placement area empty for the later programmatic logo ove
 
 Do not redesign the product.
 Do not swap the selected Pantone assignments between parts.
+Do not let one part's recolor bleed into an adjacent part.
 Do not recolor unmapped surfaces.
 Do not show the green outlined logo box or any instruction overlay in the final image.
 Do not add any logo, brand mark, watermark, wordmark, symbol, slogan, label, or customer artwork.

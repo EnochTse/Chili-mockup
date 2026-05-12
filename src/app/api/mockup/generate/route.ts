@@ -38,6 +38,9 @@ export async function POST(request: Request) {
       prompt,
       baseProductImagePath: template.baseProductImagePath,
       instructionImagePath: template.instructionImagePath,
+      partMaskImagePaths: validated.selectedPartPantones
+        .map((selection) => selection.partMaskImagePath)
+        .filter(Boolean) as string[],
       productSlug,
       outputDir: getGeneratedOutputDir()
     });
@@ -72,6 +75,9 @@ export async function POST(request: Request) {
               baseImagePath: template.baseProductImagePath,
               baseProductImagePath: template.baseProductImagePath,
               instructionImagePath: template.instructionImagePath,
+              partMaskImagePaths: validated.selectedPartPantones
+                .map((selection) => selection.partMaskImagePath)
+                .filter(Boolean),
               logoFileName: validated.logoFile.name,
               promptUsed: prompt
             }

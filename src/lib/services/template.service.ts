@@ -8,6 +8,7 @@ import { loadPantoneLibrary } from "@/lib/services/pantone-library.service";
 import { validateTemplateAsset } from "@/lib/validators/asset.validator";
 import type {
   ProductTemplate,
+  ResolvedProductColorPart,
   ResolvedProductTemplate,
   TemplateSummaryDto,
   TemplatePublicDto
@@ -38,6 +39,7 @@ const productColorPartSchema = z
     description: z.string().min(1),
     instructionCue: z.string().min(1).optional(),
     instructionColorHex: z.string().regex(hexColorPattern).optional(),
+    partMaskImageFileName: z.string().min(1).optional(),
     defaultPantoneCode: z.string().min(1).optional(),
     allowedFinishes: z.array(productFinishOptionSchema).min(1).optional(),
     defaultFinish: productFinishOptionSchema.optional(),
@@ -176,6 +178,25 @@ function hydrateTemplate(
   return template;
 }
 
+function resolveTemplatePartMasks(
+  assetFolderPublicPath: string,
+  colorParts: ProductTemplate["colorParts"]
+): ResolvedProductColorPart[] {
+  return colorParts.map((part) => {
+    if (!part.partMaskImageFileName) {
+      return part;
+    }
+
+    const partMaskImagePath = resolvePublicAssetPath(assetFolderPublicPath, part.partMaskImageFileName);
+
+    return {
+      ...part,
+      partMaskImagePath,
+      partMaskImagePublicUrl: toPublicAssetUrl(assetFolderPublicPath, part.partMaskImageFileName)
+    };
+  });
+}
+
 export async function loadTemplate(productSlug: string): Promise<ResolvedProductTemplate> {
   assertSafeSlug(productSlug);
   const templateConfig = await readTemplateConfig(productSlug);
@@ -193,8 +214,18 @@ export async function loadTemplate(productSlug: string): Promise<ResolvedProduct
   await validateTemplateAsset(baseProductImagePath, "base");
   await validateTemplateAsset(instructionImagePath, "instruction");
 
+  const colorParts = resolveTemplatePartMasks(template.assetFolderPublicPath, template.colorParts);
+  await Promise.all(
+    colorParts.map(async (part) => {
+      if (part.partMaskImagePath) {
+        await validateTemplateAsset(part.partMaskImagePath, "part_mask");
+      }
+    })
+  );
+
   return {
     ...template,
+    colorParts,
     baseImagePublicUrl: toPublicAssetUrl(
       template.assetFolderPublicPath,
       template.baseImageFileName
@@ -267,7 +298,19 @@ export function toTemplatePublicDto(template: ResolvedProductTemplate): Template
     defaultLogoPrintColor: template.defaultLogoPrintColor,
     allowedPrintingMethods: template.allowedPrintingMethods,
     pantoneOptions: template.pantoneOptions,
-    colorParts: template.colorParts,
+    colorParts: template.colorParts.map((part) => ({
+      id: part.id,
+      label: part.label,
+      description: part.description,
+      instructionCue: part.instructionCue,
+      instructionColorHex: part.instructionColorHex,
+      partMaskImageFileName: part.partMaskImageFileName,
+      partMaskImageUrl: part.partMaskImagePublicUrl,
+      defaultPantoneCode: part.defaultPantoneCode,
+      allowedFinishes: part.allowedFinishes,
+      defaultFinish: part.defaultFinish,
+      indicatorAnchors: part.indicatorAnchors
+    })),
     logoPlacement: template.logoPlacement,
     constraints: template.constraints
   };

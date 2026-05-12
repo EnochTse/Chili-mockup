@@ -98,15 +98,16 @@ GEMINI_API_KEY=your_key_here
 GEMINI_IMAGE_MODEL=gemini-3.1-flash-image-preview
 ```
 
-The Gemini provider submits the prompt and the two product reference images to Nano Banana 2 by default through Gemini batch generation, then polls the batch job until the image is ready:
+The Gemini provider submits the prompt and the product reference images to Nano Banana 2 by default through Gemini batch generation, then polls the batch job until the image is ready:
 
 - Image A: base product photo from the product template
 - Image B: instruction image from the product template
+- Image C and later: optional isolated per-part mask images, one for each configured product part that supplies a mask asset
 - The deterministic prompt built by `src/lib/services/prompt.service.ts`
 
 The returned inline image is a clean product mockup without the uploaded logo. It is saved to `public/generated/`, and the API returns an `imageUrl` beginning with `/generated/`. The browser then applies the original uploaded logo locally as a locked canvas overlay, preserving the source logo shape while adding the selected print-effect preview. Template assets are validated before generation so starter, placeholder, demo, or sample files cannot enter the real mockup flow.
 
-Instruction overlays in the template image are guide marks only. Colored masks, green logo boxes, outlines, and similar annotations must never appear in the final generated mockup.
+Instruction overlays in the template image are guide marks only. Colored masks, red part masks, green logo boxes, outlines, and similar annotations must never appear in the final generated mockup.
 
 ## Netlify Test Deploys
 
@@ -152,6 +153,8 @@ public/mockup-templates/<productSlug>/instruction-image
 src/lib/templates/<productSlug>/template.json
 ```
 
+Each `colorParts[]` entry in `template.json` can also optionally define `partMaskImageFileName`. When present, the app resolves that file from the same `public/mockup-templates/<productSlug>/` asset folder and sends it to Gemini as an isolated part reference. This is designed to reduce common failures such as coloring the wrong region, bleeding into neighboring parts, or skipping a small part entirely.
+
 The backend resolves absolute filesystem paths from `productSlug` and `template.json`. The frontend receives only public URLs. The homepage and `/mockup/[productSlug]` routes are generated from every discovered template folder.
 
 Fastest way to add a product:
@@ -172,9 +175,10 @@ Manual option:
 
 1. Create `public/mockup-templates/<productSlug>/`.
 2. Add a real `base-product` image and a real `instruction-image`.
-3. Create `src/lib/templates/<productSlug>/template.json`.
-4. Point `assetFolderPublicPath`, `baseImageFileName`, and `instructionImageFileName` to those assets.
-5. Open `/mockup/<productSlug>`.
+3. Optionally add one isolated mask image per recolorable part, for example `body-mask.png`, `lid-mask.png`, `clip-mask.png`.
+4. Create `src/lib/templates/<productSlug>/template.json`.
+5. Point `assetFolderPublicPath`, `baseImageFileName`, and `instructionImageFileName` to those assets. For any part that has its own mask, add `partMaskImageFileName` inside that `colorParts[]` item.
+6. Open `/mockup/<productSlug>`.
 
 ## Testing
 

@@ -41,6 +41,7 @@ function createDraftPart(index: number): ProductColorPart {
     description: `Color-controlled region ${index}.`,
     instructionCue: "",
     instructionColorHex: "",
+    partMaskImageFileName: "",
     defaultPantoneCode: "Pantone Black C",
     indicatorAnchors: [createDraftIndicatorAnchor(index, 1)]
   };
@@ -1022,7 +1023,33 @@ export default function TemplateSetupStudio({
                           placeholder="#1450FF"
                         />
                       </label>
+
+                      <label className="setup-field">
+                        <span className="control-label">Part mask image file</span>
+                        <input
+                          className="input-shell"
+                          value={part.partMaskImageFileName || ""}
+                          onChange={(event) =>
+                            setFormState((current) => ({
+                              ...current,
+                              colorParts: current.colorParts.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, partMaskImageFileName: event.target.value }
+                                  : item
+                              )
+                            }))
+                          }
+                          placeholder="part-1-mask.png"
+                        />
+                      </label>
                     </div>
+                    <p className="fine-print">
+                      Optional. Add a per-part mask image file name stored in
+                      {` `}
+                      <code>{`/public/mockup-templates/${formState.slug || "<slug>"}/`}</code>
+                      {` `}
+                      to give Gemini an isolated location reference for this exact part.
+                    </p>
 
                     <div className="setup-subsection">
                       <div className="setup-subsection-head">

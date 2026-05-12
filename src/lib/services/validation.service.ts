@@ -134,6 +134,8 @@ function validatePartPantones(
       partDescription: part.description,
       instructionCue: part.instructionCue,
       instructionColorHex: part.instructionColorHex,
+      partMaskImagePath: part.partMaskImagePath,
+      partMaskImageUrl: part.partMaskImagePublicUrl,
       pantoneCode,
       pantone,
       selectedFinish: resolvePartFinishSelection(part, requestedFinish)

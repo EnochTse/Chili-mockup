@@ -74,7 +74,7 @@ describe("ai.service", () => {
     expect(getGeminiImageSize()).toBe("1K");
   });
 
-  it("builds prompt plus exactly two inline image inputs for Gemini", async () => {
+  it("builds prompt plus the default two inline image inputs for Gemini when no part masks exist", async () => {
     const template = await loadTemplate("umbrella-classic-black");
     const parts = buildGeminiContentParts({
       prompt: "test prompt",
@@ -86,6 +86,21 @@ describe("ai.service", () => {
 
     expect(parts).toHaveLength(3);
     expect(parts.filter((part) => "inlineData" in part)).toHaveLength(2);
+  });
+
+  it("adds every supplied part mask as an extra Gemini image input", async () => {
+    const template = await loadTemplate("umbrella-classic-black");
+    const parts = buildGeminiContentParts({
+      prompt: "test prompt",
+      baseProductImagePath: template.baseProductImagePath,
+      instructionImagePath: template.instructionImagePath,
+      partMaskImagePaths: [template.instructionImagePath, template.baseProductImagePath],
+      productSlug: template.slug,
+      outputDir: "public/generated"
+    });
+
+    expect(parts).toHaveLength(5);
+    expect(parts.filter((part) => "inlineData" in part)).toHaveLength(4);
   });
 
   it("builds a single inlined batch request for Gemini image generation", async () => {

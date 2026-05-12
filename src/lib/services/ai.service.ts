@@ -19,6 +19,7 @@ export interface GenerateMockupInput {
   prompt: string;
   baseProductImagePath: string;
   instructionImagePath: string;
+  partMaskImagePaths?: string[];
   productSlug: string;
   outputDir: string;
 }
@@ -80,7 +81,8 @@ export function buildGeminiContentParts(input: GenerateMockupInput) {
   return [
     { text: input.prompt },
     toInlineImagePart(input.baseProductImagePath),
-    toInlineImagePart(input.instructionImagePath)
+    toInlineImagePart(input.instructionImagePath),
+    ...(input.partMaskImagePaths || []).map((filePath) => toInlineImagePart(filePath))
   ];
 }
 

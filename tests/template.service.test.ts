@@ -44,6 +44,8 @@ describe("template.service", () => {
         instructionCue: "Blue umbrella canopy region",
         instructionColorHex: "#1450FF",
         defaultPantoneCode: "Pantone Black C",
+        allowedFinishes: ["matte", "glossy", "rubber"],
+        defaultFinish: "matte",
         indicatorAnchors: [
           {
             id: "canopy-indicator-1",
