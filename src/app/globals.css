@@ -1819,16 +1819,21 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .logo-adjust-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-16);
+  display: grid;
+  gap: var(--spacing-10, 10px);
+}
+
+.logo-adjust-copy {
+  display: grid;
+  gap: var(--spacing-8);
+  min-width: 0;
 }
 
 .logo-adjust-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  align-items: center;
   gap: var(--spacing-8);
 }
 
@@ -1867,8 +1872,8 @@ input[type="file"].input-shell::file-selector-button {
 
 .logo-adjust-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--spacing-12) var(--spacing-16);
+  grid-template-columns: 1fr;
+  gap: var(--spacing-12);
 }
 
 .logo-slider-row {

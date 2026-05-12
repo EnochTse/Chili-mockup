@@ -1628,14 +1628,16 @@ export default function MockupGenerator({
                 <div className="render-meta">
                   <div className="logo-adjust-panel">
                       <div className="logo-adjust-head">
-                        <div>
+                        <div className="logo-adjust-copy">
                           <p className="logo-adjust-title">Logo position adjustment</p>
                           <p className="fine-print">
                             Drag the preview, or fine-tune the logo with the controls below. This
                             does not regenerate the AI image.
                           </p>
                         </div>
-                        <div className="logo-adjust-actions">
+                      </div>
+
+                      <div className="logo-adjust-actions">
                           <button
                             className="icon-action-button"
                             type="button"
@@ -1672,7 +1674,6 @@ export default function MockupGenerator({
                           >
                             Save image
                           </button>
-                        </div>
                       </div>
 
                       <div className="logo-adjust-grid" aria-disabled={!canAdjustLogo}>
@@ -2148,14 +2149,16 @@ export default function MockupGenerator({
                   {displayedMockupImageUrl ? (
                     <div className="logo-adjust-panel">
                       <div className="logo-adjust-head">
-                        <div>
+                        <div className="logo-adjust-copy">
                           <p className="logo-adjust-title">Logo position adjustment</p>
                           <p className="fine-print">
                             Drag the preview image on the left, or fine-tune the logo with the
                             controls below. This does not regenerate the AI image.
                           </p>
                         </div>
-                        <div className="logo-adjust-actions">
+                      </div>
+
+                      <div className="logo-adjust-actions">
                           <button
                             className="icon-action-button"
                             type="button"
@@ -2192,7 +2195,6 @@ export default function MockupGenerator({
                           >
                             Save image
                           </button>
-                        </div>
                       </div>
 
                       <div className="logo-adjust-grid" aria-disabled={!canAdjustLogo}>
