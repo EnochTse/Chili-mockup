@@ -96,12 +96,6 @@ type Rgb = {
   b: number;
 };
 
-type Hsl = {
-  h: number;
-  s: number;
-  l: number;
-};
-
 type LayeredRenderImages = Partial<Record<ProductFinishOption, HTMLImageElement>>;
 
 type LogoTransform = {
@@ -278,6 +272,22 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function srgbChannelToLinear(value: number) {
+  const normalized = clamp(value / 255, 0, 1);
+  return normalized <= 0.04045
+    ? normalized / 12.92
+    : Math.pow((normalized + 0.055) / 1.055, 2.4);
+}
+
+function linearChannelToSrgb(value: number) {
+  const normalized = clamp(value, 0, 1);
+  const srgb =
+    normalized <= 0.0031308
+      ? normalized * 12.92
+      : 1.055 * Math.pow(normalized, 1 / 2.4) - 0.055;
+  return Math.round(clamp(srgb, 0, 1) * 255);
+}
+
 function normalizeLogoTransform(transform: LogoTransform): LogoTransform {
   const normalizedRotation = Number.isFinite(transform.rotation)
     ? ((transform.rotation % 360) + 360) % 360
@@ -309,66 +319,6 @@ function hexToRgb(hex: string): Rgb {
     r: Number.parseInt(value.slice(0, 2), 16),
     g: Number.parseInt(value.slice(2, 4), 16),
     b: Number.parseInt(value.slice(4, 6), 16)
-  };
-}
-
-function rgbToHsl(rgb: Rgb): Hsl {
-  const r = rgb.r / 255;
-  const g = rgb.g / 255;
-  const b = rgb.b / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  const lightness = (max + min) / 2;
-
-  if (delta === 0) {
-    return { h: 0, s: 0, l: lightness };
-  }
-
-  const saturation =
-    lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-  let hue = 0;
-
-  if (max === r) {
-    hue = (g - b) / delta + (g < b ? 6 : 0);
-  } else if (max === g) {
-    hue = (b - r) / delta + 2;
-  } else {
-    hue = (r - g) / delta + 4;
-  }
-
-  return {
-    h: hue / 6,
-    s: saturation,
-    l: lightness
-  };
-}
-
-function hueToRgb(p: number, q: number, t: number) {
-  let nextT = t;
-  if (nextT < 0) nextT += 1;
-  if (nextT > 1) nextT -= 1;
-  if (nextT < 1 / 6) return p + (q - p) * 6 * nextT;
-  if (nextT < 1 / 2) return q;
-  if (nextT < 2 / 3) return p + (q - p) * (2 / 3 - nextT) * 6;
-  return p;
-}
-
-function hslToRgb(hsl: Hsl): Rgb {
-  const { h, s, l } = hsl;
-
-  if (s === 0) {
-    const value = Math.round(l * 255);
-    return { r: value, g: value, b: value };
-  }
-
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-
-  return {
-    r: Math.round(hueToRgb(p, q, h + 1 / 3) * 255),
-    g: Math.round(hueToRgb(p, q, h) * 255),
-    b: Math.round(hueToRgb(p, q, h - 1 / 3) * 255)
   };
 }
 
@@ -837,11 +787,11 @@ function getMaskAlpha(maskData: Uint8ClampedArray, index: number) {
   const a = maskData[index + 3] / 255;
   const redDominance = r - Math.max(g, b);
 
-  if (r <= 180 || redDominance <= 60) return 0;
+  if (r <= 150 || redDominance <= 40) return 0;
 
-  const redStrength = clamp((r - 180) / 75, 0, 1);
-  const dominanceStrength = clamp((redDominance - 60) / 135, 0, 1);
-  return redStrength * dominanceStrength * a;
+  const redStrength = clamp((r - 150) / 65, 0, 1);
+  const dominanceStrength = clamp((redDominance - 40) / 110, 0, 1);
+  return Math.min(redStrength, dominanceStrength) * a;
 }
 
 function createLayeredPartCanvas(params: {
@@ -872,25 +822,32 @@ function createLayeredPartCanvas(params: {
   outputCanvas.height = height;
   const outputContext = getCanvasContext(outputCanvas);
   const outputData = outputContext.createImageData(width, height);
-  const tintHsl = rgbToHsl(tint);
-  const materialLightness = clamp(tintHsl.l, 0.08, 0.86);
-  const materialSaturation = clamp(tintHsl.s * 1.14, 0, 1);
+  const tintLinear = {
+    r: srgbChannelToLinear(tint.r),
+    g: srgbChannelToLinear(tint.g),
+    b: srgbChannelToLinear(tint.b)
+  };
+  const tintLuminance =
+    tintLinear.r * 0.2126 + tintLinear.g * 0.7152 + tintLinear.b * 0.0722;
+  const highlightLimit = tintLuminance < 0.08 ? 0.08 : tintLuminance < 0.36 ? 0.04 : 0.025;
+  const retainedBase = Math.max(0, 1 - colorOpacity);
   const colorTransferTable = Array.from({ length: 256 }, (_, level) => {
     const sourceBrightness = level / 255;
-    const highlight = clamp((sourceBrightness - 0.78) / 0.22, 0, 1);
-    const shadow = clamp((0.5 - sourceBrightness) / 0.38, 0, 1);
-    const lightness =
-      materialLightness +
-      (sourceBrightness - 0.74) * (0.68 + (1 - materialLightness) * 0.12);
-    const saturation = materialSaturation * (1 - highlight * 0.18 - shadow * 0.06);
+    const highlight = clamp((sourceBrightness - 0.9) / 0.1, 0, 1);
+    const shadow = clamp((0.5 - sourceBrightness) / 0.3, 0, 1);
+    const shade = clamp(Math.pow(sourceBrightness / 0.82, 1.12), 0.48 - shadow * 0.1, 1.12);
+    const specular = Math.pow(highlight, 2.35) * highlightLimit;
+    const rLinear = tintLinear.r * shade * colorOpacity + specular;
+    const gLinear = tintLinear.g * shade * colorOpacity + specular;
+    const bLinear = tintLinear.b * shade * colorOpacity + specular;
 
     return {
-      color: hslToRgb({
-        h: tintHsl.h,
-        s: clamp(saturation, 0, 1),
-        l: clamp(lightness, 0.045, 0.96)
-      }),
-      specularWash: Math.pow(highlight, 1.9) * (0.14 + (1 - materialLightness) * 0.06)
+      r: linearChannelToSrgb(rLinear),
+      g: linearChannelToSrgb(gLinear),
+      b: linearChannelToSrgb(bLinear),
+      rLinear,
+      gLinear,
+      bLinear
     };
   });
 
@@ -906,39 +863,37 @@ function createLayeredPartCanvas(params: {
     const sourceB = finishData.data[index + 2];
     const sourceBrightness = (sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722) / 255;
     const transfer = colorTransferTable[Math.round(sourceBrightness * 255)];
-    const { color: colorized, specularWash } = transfer;
     const sourceDetail = [
       sourceR - sourceBrightness * 255,
       sourceG - sourceBrightness * 255,
       sourceB - sourceBrightness * 255
     ];
-    const retainedBase = Math.max(0.01, 1 - colorOpacity);
-    const detailStrength = 0.08 + (1 - materialLightness) * 0.04;
+    const detailStrength = 0.055;
+    const renderedR =
+      retainedBase > 0
+        ? linearChannelToSrgb(transfer.rLinear + srgbChannelToLinear(sourceR) * retainedBase)
+        : transfer.r;
+    const renderedG =
+      retainedBase > 0
+        ? linearChannelToSrgb(transfer.gLinear + srgbChannelToLinear(sourceG) * retainedBase)
+        : transfer.g;
+    const renderedB =
+      retainedBase > 0
+        ? linearChannelToSrgb(transfer.bLinear + srgbChannelToLinear(sourceB) * retainedBase)
+        : transfer.b;
 
     outputData.data[index] = clamp(
-      Math.round(
-        sourceR * retainedBase +
-          (colorized.r * (1 - specularWash) + 255 * specularWash) * colorOpacity +
-          sourceDetail[0] * detailStrength
-      ),
+      Math.round(renderedR + sourceDetail[0] * detailStrength),
       0,
       255
     );
     outputData.data[index + 1] = clamp(
-      Math.round(
-        sourceG * retainedBase +
-          (colorized.g * (1 - specularWash) + 255 * specularWash) * colorOpacity +
-          sourceDetail[1] * detailStrength
-      ),
+      Math.round(renderedG + sourceDetail[1] * detailStrength),
       0,
       255
     );
     outputData.data[index + 2] = clamp(
-      Math.round(
-        sourceB * retainedBase +
-          (colorized.b * (1 - specularWash) + 255 * specularWash) * colorOpacity +
-          sourceDetail[2] * detailStrength
-      ),
+      Math.round(renderedB + sourceDetail[2] * detailStrength),
       0,
       255
     );

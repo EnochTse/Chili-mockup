@@ -165,7 +165,7 @@ summary:focus-visible {
 .brand-lockup {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-10);
+  gap: var(--spacing-20);
   min-width: 0;
   color: var(--color-obsidian);
 }
