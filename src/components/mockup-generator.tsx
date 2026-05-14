@@ -77,6 +77,7 @@ const maxPreviewRetryCount = 6;
 const fallbackLogoArea = { x: 0.34, y: 0.58, width: 0.32, height: 0.11 };
 const defaultLogoTransform = { offsetX: 0, offsetY: 0, scale: 1, rotation: 0 };
 const logoOffsetLimit = 0.35;
+const imageLoadCache = new Map<string, Promise<HTMLImageElement>>();
 const localNextApiGenerateEndpoint = "/api/mockup/generate";
 const netlifyFunctionGenerateEndpoint = "/.netlify/functions/generate-mockup";
 const logoQuarterTurnDegrees = 90;
@@ -306,15 +307,25 @@ function hexToRgb(hex: string): Rgb {
 }
 
 function loadImage(source: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
+  const shouldCache = !source.startsWith("data:") && !source.startsWith("blob:");
+  const cachedImage = shouldCache ? imageLoadCache.get(source) : undefined;
+  if (cachedImage) return cachedImage;
+
+  const imagePromise = new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
-    if (!source.startsWith("data:") && !source.startsWith("blob:")) {
+    if (shouldCache) {
       image.crossOrigin = "anonymous";
     }
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error("Image failed to load."));
     image.src = source;
   });
+
+  if (shouldCache) {
+    imageLoadCache.set(source, imagePromise);
+    imagePromise.catch(() => imageLoadCache.delete(source));
+  }
+  return imagePromise;
 }
 
 async function loadFileImage(file: File) {
@@ -553,20 +564,21 @@ function makeLogoEffectCanvas(logoCanvas: HTMLCanvasElement, printingMethod: str
     context.save();
     context.globalCompositeOperation = "source-atop";
     const metallicGradient = context.createLinearGradient(0, 0, logoCanvas.width, logoCanvas.height);
-    metallicGradient.addColorStop(0, "#080808");
-    metallicGradient.addColorStop(0.16, "#5f5f66");
-    metallicGradient.addColorStop(0.34, "#f4f4f6");
-    metallicGradient.addColorStop(0.5, "#8a8a90");
-    metallicGradient.addColorStop(0.68, "#fdfdff");
-    metallicGradient.addColorStop(0.84, "#4d4d53");
-    metallicGradient.addColorStop(1, "#050505");
+    metallicGradient.addColorStop(0, "#08090a");
+    metallicGradient.addColorStop(0.1, "#3e4146");
+    metallicGradient.addColorStop(0.23, "#f7f8fa");
+    metallicGradient.addColorStop(0.38, "#777b82");
+    metallicGradient.addColorStop(0.5, "#ffffff");
+    metallicGradient.addColorStop(0.64, "#5d6168");
+    metallicGradient.addColorStop(0.82, "#f1f3f5");
+    metallicGradient.addColorStop(1, "#111214");
     context.fillStyle = metallicGradient;
     context.fillRect(0, 0, logoCanvas.width, logoCanvas.height);
     context.restore();
 
     context.save();
     context.globalCompositeOperation = "source-atop";
-    context.globalAlpha = 0.26;
+    context.globalAlpha = 0.5;
     const shineWidth = Math.max(6, Math.round(logoCanvas.width * 0.16));
     const shineGradient = context.createLinearGradient(
       logoCanvas.width * 0.15,
@@ -577,7 +589,7 @@ function makeLogoEffectCanvas(logoCanvas: HTMLCanvasElement, printingMethod: str
     shineGradient.addColorStop(0, "rgba(255,255,255,0)");
     shineGradient.addColorStop(0.5, "rgba(255,255,255,1)");
     shineGradient.addColorStop(1, "rgba(255,255,255,0)");
-    context.translate(logoCanvas.width * 0.08, 0);
+    context.translate(logoCanvas.width * 0.04, 0);
     context.rotate((-18 * Math.PI) / 180);
     context.fillStyle = shineGradient;
     context.fillRect(
@@ -586,6 +598,19 @@ function makeLogoEffectCanvas(logoCanvas: HTMLCanvasElement, printingMethod: str
       logoCanvas.width,
       logoCanvas.height * 1.35
     );
+    context.restore();
+
+    context.save();
+    context.globalCompositeOperation = "source-atop";
+    context.globalAlpha = 0.18;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = Math.max(0.5, logoCanvas.height / 180);
+    for (let y = -logoCanvas.height; y < logoCanvas.height * 2; y += Math.max(2, logoCanvas.height / 34)) {
+      context.beginPath();
+      context.moveTo(-logoCanvas.width * 0.2, y);
+      context.lineTo(logoCanvas.width * 1.2, y + logoCanvas.height * 0.32);
+      context.stroke();
+    }
     context.restore();
   }
 
@@ -622,10 +647,40 @@ function drawLogoWithPrintEffect(params: {
     context.globalAlpha = 0.58;
     context.globalCompositeOperation = "multiply";
   } else if (printingMethod === "mirror_laser_engraving") {
-    context.globalAlpha = 0.82;
-    context.shadowColor = "rgba(255,255,255,0.18)";
-    context.shadowBlur = 2;
-    context.shadowOffsetY = -1;
+    const bevelOffset = Math.max(0.6, Math.min(rect.width, rect.height) * 0.012);
+
+    context.globalCompositeOperation = "multiply";
+    context.globalAlpha = 0.32;
+    context.filter = `blur(${Math.max(0.4, bevelOffset * 0.55)}px)`;
+    context.drawImage(
+      effectCanvas,
+      -rect.width / 2 + bevelOffset,
+      -rect.height / 2 + bevelOffset,
+      rect.width,
+      rect.height
+    );
+
+    context.filter = "none";
+    context.globalCompositeOperation = "screen";
+    context.globalAlpha = 0.94;
+    context.shadowColor = "rgba(255,255,255,0.55)";
+    context.shadowBlur = Math.max(1, bevelOffset * 1.4);
+    context.shadowOffsetX = -bevelOffset * 0.35;
+    context.shadowOffsetY = -bevelOffset * 0.5;
+    context.drawImage(effectCanvas, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
+
+    context.shadowColor = "transparent";
+    context.globalCompositeOperation = "overlay";
+    context.globalAlpha = 0.5;
+    context.drawImage(
+      effectCanvas,
+      -rect.width / 2 - bevelOffset * 0.45,
+      -rect.height / 2 - bevelOffset * 0.55,
+      rect.width,
+      rect.height
+    );
+    context.restore();
+    return;
   } else {
     context.globalAlpha = 0.97;
   }
@@ -705,8 +760,8 @@ async function composeMockupPreview(params: {
 }
 
 const defaultLayeredFinishRule = {
-  colorOpacity: 0.85,
-  blendMode: "multiply" as GlobalCompositeOperation
+  colorOpacity: 0.96,
+  blendMode: "source-over" as GlobalCompositeOperation
 };
 
 function getMaskAlpha(maskData: Uint8ClampedArray, index: number) {
@@ -763,25 +818,28 @@ function createLayeredPartCanvas(params: {
     const sourceG = finishData.data[index + 1];
     const sourceB = finishData.data[index + 2];
     const sourceBrightness = (sourceR + sourceG + sourceB) / (3 * 255);
-    const shade = clamp(0.42 + sourceBrightness * 0.68, 0.18, 1.12);
+    const shade = clamp(0.36 + sourceBrightness * 0.82, 0.2, 1.18);
+    const contrastShade = clamp((shade - 0.5) * 1.14 + 0.5, 0.16, 1.22);
     const sourceDetail = [
       sourceR - sourceBrightness * 255,
       sourceG - sourceBrightness * 255,
       sourceB - sourceBrightness * 255
     ];
+    const retainedBase = Math.max(0.02, 1 - colorOpacity);
+    const detailStrength = 0.16;
 
     outputData.data[index] = clamp(
-      Math.round(sourceR * (1 - colorOpacity) + tint.r * shade * colorOpacity + sourceDetail[0] * 0.12),
+      Math.round(sourceR * retainedBase + tint.r * contrastShade * colorOpacity + sourceDetail[0] * detailStrength),
       0,
       255
     );
     outputData.data[index + 1] = clamp(
-      Math.round(sourceG * (1 - colorOpacity) + tint.g * shade * colorOpacity + sourceDetail[1] * 0.12),
+      Math.round(sourceG * retainedBase + tint.g * contrastShade * colorOpacity + sourceDetail[1] * detailStrength),
       0,
       255
     );
     outputData.data[index + 2] = clamp(
-      Math.round(sourceB * (1 - colorOpacity) + tint.b * shade * colorOpacity + sourceDetail[2] * 0.12),
+      Math.round(sourceB * retainedBase + tint.b * contrastShade * colorOpacity + sourceDetail[2] * detailStrength),
       0,
       255
     );
@@ -1192,6 +1250,53 @@ export default function MockupGenerator({
     setPreviewImageUrl(buildPreviewImageUrl(result.imageUrl, 0));
     setIsPreviewResolving(!result.imageUrl.startsWith("data:"));
   }, [result?.imageUrl]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!template?.layeredRender?.enabled || template.layeredRender.mode !== "local-layered") {
+      return;
+    }
+
+    let selectedPartPantones: SelectedPartPantone[];
+    try {
+      selectedPartPantones = buildSelectedPartPantones(template, partPantones, partFinishes);
+    } catch {
+      return;
+    }
+
+    setCompositedPreviewUrl(null);
+    setIsPreviewResolving(true);
+    renderLayeredProductMockup({
+      template,
+      selectedPartPantones
+    })
+      .then((imageUrl) => {
+        if (isCancelled) return;
+
+        clearPreviewRetryTimeout();
+        setPreviewImageUrl(imageUrl);
+        setResult((current) =>
+          current?.provider === "local-layered"
+            ? {
+                ...current,
+                imageUrl
+              }
+            : current
+        );
+        setIsPreviewResolving(false);
+        setSubmitError(null);
+      })
+      .catch((error) => {
+        if (isCancelled) return;
+        setIsPreviewResolving(false);
+        setSubmitError(error instanceof Error ? error.message : "Layered preview failed.");
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [template, partPantones, partFinishes]);
 
   useEffect(() => {
     let isCancelled = false;
