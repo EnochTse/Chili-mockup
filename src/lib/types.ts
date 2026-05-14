@@ -14,6 +14,9 @@ export type ProductFinishOption = "matte" | "glossy" | "rubber" | "metallic";
 export interface LayeredRenderFinishRule {
   colorOpacity: number;
   blendMode: GlobalCompositeOperation;
+  highlightProtection?: number;
+  textureStrength?: number;
+  saturationBoost?: number;
 }
 
 export interface LayeredRenderConfig {

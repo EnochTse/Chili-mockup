@@ -67,7 +67,10 @@ const layeredRenderSchema = z.object({
       productFinishOptionSchema,
       z.object({
         colorOpacity: z.number().min(0).max(1),
-        blendMode: canvasBlendModeSchema
+        blendMode: canvasBlendModeSchema,
+        highlightProtection: z.number().min(0).max(1).optional(),
+        textureStrength: z.number().min(0).max(1).optional(),
+        saturationBoost: z.number().min(0).max(0.5).optional()
       })
     )
     .optional()

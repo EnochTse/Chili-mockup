@@ -96,6 +96,12 @@ type Rgb = {
   b: number;
 };
 
+type LinearRgb = {
+  r: number;
+  g: number;
+  b: number;
+};
+
 type LayeredRenderImages = Partial<Record<ProductFinishOption, HTMLImageElement>>;
 
 type LogoTransform = {
@@ -777,8 +783,26 @@ async function composeMockupPreview(params: {
 
 const defaultLayeredFinishRule = {
   colorOpacity: 0.96,
-  blendMode: "source-over" as GlobalCompositeOperation
+  blendMode: "source-over" as GlobalCompositeOperation,
+  highlightProtection: 0.22,
+  textureStrength: 0.14,
+  saturationBoost: 0.06
 };
+
+function getRelativeLuminanceLinear(color: LinearRgb) {
+  return color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
+}
+
+function boostLinearTintSaturation(tint: LinearRgb, saturationBoost: number): LinearRgb {
+  const luminance = getRelativeLuminanceLinear(tint);
+  const boostFactor = 1 + saturationBoost;
+
+  return {
+    r: clamp(luminance + (tint.r - luminance) * boostFactor, 0, 1),
+    g: clamp(luminance + (tint.g - luminance) * boostFactor, 0, 1),
+    b: clamp(luminance + (tint.b - luminance) * boostFactor, 0, 1)
+  };
+}
 
 function getMaskAlpha(maskData: Uint8ClampedArray, index: number) {
   const r = maskData[index];
@@ -801,8 +825,21 @@ function createLayeredPartCanvas(params: {
   maskImage: HTMLImageElement;
   tint: Rgb;
   colorOpacity: number;
+  highlightProtection: number;
+  textureStrength: number;
+  saturationBoost: number;
 }) {
-  const { width, height, finishImage, maskImage, tint, colorOpacity } = params;
+  const {
+    width,
+    height,
+    finishImage,
+    maskImage,
+    tint,
+    colorOpacity,
+    highlightProtection,
+    textureStrength,
+    saturationBoost
+  } = params;
   const finishCanvas = document.createElement("canvas");
   finishCanvas.width = width;
   finishCanvas.height = height;
@@ -827,19 +864,29 @@ function createLayeredPartCanvas(params: {
     g: srgbChannelToLinear(tint.g),
     b: srgbChannelToLinear(tint.b)
   };
-  const tintLuminance =
-    tintLinear.r * 0.2126 + tintLinear.g * 0.7152 + tintLinear.b * 0.0722;
+  const boostedTintLinear = boostLinearTintSaturation(tintLinear, saturationBoost);
+  const tintLuminance = getRelativeLuminanceLinear(boostedTintLinear);
   const highlightLimit = tintLuminance < 0.08 ? 0.08 : tintLuminance < 0.36 ? 0.04 : 0.025;
-  const retainedBase = Math.max(0, 1 - colorOpacity);
+
+  // Keep stronger color in the midtones, but back off in bright highlights so finish texture stays visible.
   const colorTransferTable = Array.from({ length: 256 }, (_, level) => {
     const sourceBrightness = level / 255;
-    const highlight = clamp((sourceBrightness - 0.9) / 0.1, 0, 1);
-    const shadow = clamp((0.5 - sourceBrightness) / 0.3, 0, 1);
-    const shade = clamp(Math.pow(sourceBrightness / 0.82, 1.12), 0.48 - shadow * 0.1, 1.12);
+    const highlight = clamp((sourceBrightness - 0.82) / 0.18, 0, 1);
+    const shadow = clamp((0.38 - sourceBrightness) / 0.26, 0, 1);
+    const midtone = 1 - clamp(Math.abs(sourceBrightness - 0.55) / 0.55, 0, 1);
+    const adaptiveTintStrength = clamp(
+      colorOpacity *
+        (1 - Math.pow(highlight, 1.35) * highlightProtection) *
+        (0.97 + midtone * 0.05 - shadow * 0.03),
+      0,
+      1
+    );
+    const retainedBase = Math.max(0, 1 - adaptiveTintStrength);
+    const shade = clamp(Math.pow(sourceBrightness / 0.84, 1.08), 0.5 - shadow * 0.08, 1.08);
     const specular = Math.pow(highlight, 2.35) * highlightLimit;
-    const rLinear = tintLinear.r * shade * colorOpacity + specular;
-    const gLinear = tintLinear.g * shade * colorOpacity + specular;
-    const bLinear = tintLinear.b * shade * colorOpacity + specular;
+    const rLinear = boostedTintLinear.r * shade * adaptiveTintStrength + specular;
+    const gLinear = boostedTintLinear.g * shade * adaptiveTintStrength + specular;
+    const bLinear = boostedTintLinear.b * shade * adaptiveTintStrength + specular;
 
     return {
       r: linearChannelToSrgb(rLinear),
@@ -847,7 +894,9 @@ function createLayeredPartCanvas(params: {
       b: linearChannelToSrgb(bLinear),
       rLinear,
       gLinear,
-      bLinear
+      bLinear,
+      retainedBase,
+      detailStrength: clamp(textureStrength + midtone * 0.03 + highlight * 0.04, 0.04, 0.28)
     };
   });
 
@@ -868,18 +917,34 @@ function createLayeredPartCanvas(params: {
       sourceG - sourceBrightness * 255,
       sourceB - sourceBrightness * 255
     ];
-    const detailStrength = 0.055;
+    const sourceTextureStrength = clamp(
+      (Math.abs(sourceR - sourceG) + Math.abs(sourceG - sourceB) + Math.abs(sourceB - sourceR)) /
+        510,
+      0,
+      1
+    );
+    const detailStrength = clamp(
+      transfer.detailStrength + sourceTextureStrength * 0.08,
+      0.04,
+      0.32
+    );
     const renderedR =
-      retainedBase > 0
-        ? linearChannelToSrgb(transfer.rLinear + srgbChannelToLinear(sourceR) * retainedBase)
+      transfer.retainedBase > 0
+        ? linearChannelToSrgb(
+            transfer.rLinear + srgbChannelToLinear(sourceR) * transfer.retainedBase
+          )
         : transfer.r;
     const renderedG =
-      retainedBase > 0
-        ? linearChannelToSrgb(transfer.gLinear + srgbChannelToLinear(sourceG) * retainedBase)
+      transfer.retainedBase > 0
+        ? linearChannelToSrgb(
+            transfer.gLinear + srgbChannelToLinear(sourceG) * transfer.retainedBase
+          )
         : transfer.g;
     const renderedB =
-      retainedBase > 0
-        ? linearChannelToSrgb(transfer.bLinear + srgbChannelToLinear(sourceB) * retainedBase)
+      transfer.retainedBase > 0
+        ? linearChannelToSrgb(
+            transfer.bLinear + srgbChannelToLinear(sourceB) * transfer.retainedBase
+          )
         : transfer.b;
 
     outputData.data[index] = clamp(
@@ -964,7 +1029,11 @@ async function renderLayeredProductMockup(params: {
       finishImage,
       maskImage,
       tint: hexToRgb(selection.pantone.previewHex),
-      colorOpacity: rule.colorOpacity
+      colorOpacity: rule.colorOpacity,
+      highlightProtection:
+        rule.highlightProtection ?? defaultLayeredFinishRule.highlightProtection,
+      textureStrength: rule.textureStrength ?? defaultLayeredFinishRule.textureStrength,
+      saturationBoost: rule.saturationBoost ?? defaultLayeredFinishRule.saturationBoost
     });
 
     context.save();

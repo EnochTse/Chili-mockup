@@ -124,15 +124,24 @@
     "finishRules": {
       "matte": {
         "colorOpacity": 0.9,
-        "blendMode": "source-over"
+        "blendMode": "source-over",
+        "highlightProtection": 0.18,
+        "textureStrength": 0.14,
+        "saturationBoost": 0.05
       },
       "glossy": {
         "colorOpacity": 0.9,
-        "blendMode": "source-over"
+        "blendMode": "source-over",
+        "highlightProtection": 0.28,
+        "textureStrength": 0.16,
+        "saturationBoost": 0.08
       },
       "rubber": {
         "colorOpacity": 0.9,
-        "blendMode": "source-over"
+        "blendMode": "source-over",
+        "highlightProtection": 0.2,
+        "textureStrength": 0.15,
+        "saturationBoost": 0.06
       }
     }
   },

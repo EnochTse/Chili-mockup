@@ -120,6 +120,26 @@ describe("template.service", () => {
         "part-1-nan6hb": "/mockup-templates/bnd62/layered/BND62_part_1.png",
         "part-2-3ckhru": "/mockup-templates/bnd62/layered/BND62_part_2.png",
         "part-3-tzd2o2": "/mockup-templates/bnd62/layered/BND62_part_3.png"
+      },
+      finishRules: {
+        matte: {
+          colorOpacity: 0.9,
+          highlightProtection: 0.18,
+          textureStrength: 0.14,
+          saturationBoost: 0.05
+        },
+        glossy: {
+          colorOpacity: 0.9,
+          highlightProtection: 0.28,
+          textureStrength: 0.16,
+          saturationBoost: 0.08
+        },
+        rubber: {
+          colorOpacity: 0.9,
+          highlightProtection: 0.2,
+          textureStrength: 0.15,
+          saturationBoost: 0.06
+        }
       }
     });
     expect(template.colorParts.map((part) => part.allowedFinishes)).toEqual([
