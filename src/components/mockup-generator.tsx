@@ -804,16 +804,20 @@ function boostLinearTintSaturation(tint: LinearRgb, saturationBoost: number): Li
   };
 }
 
-function scaleLinearColorToTargetLuminance(color: LinearRgb, targetLuminance: number): LinearRgb {
-  const currentLuminance = getRelativeLuminanceLinear(color);
-  if (currentLuminance <= 0.0001) return color;
-
-  const scale = clamp(targetLuminance / currentLuminance, 0, 4);
+function mixLinearColor(from: LinearRgb, to: LinearRgb, amount: number): LinearRgb {
+  const mixAmount = clamp(amount, 0, 1);
   return {
-    r: clamp(color.r * scale, 0, 1),
-    g: clamp(color.g * scale, 0, 1),
-    b: clamp(color.b * scale, 0, 1)
+    r: from.r + (to.r - from.r) * mixAmount,
+    g: from.g + (to.g - from.g) * mixAmount,
+    b: from.b + (to.b - from.b) * mixAmount
   };
+}
+
+function smoothstep(edge0: number, edge1: number, value: number) {
+  if (edge0 === edge1) return value < edge0 ? 0 : 1;
+
+  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 function getMaskAlpha(maskData: Uint8ClampedArray, index: number) {
@@ -878,37 +882,42 @@ function createLayeredPartCanvas(params: {
   };
   const boostedTintLinear = boostLinearTintSaturation(tintLinear, saturationBoost);
   const tintLuminance = getRelativeLuminanceLinear(boostedTintLinear);
-  const highlightLimit = tintLuminance < 0.08 ? 0.08 : tintLuminance < 0.36 ? 0.04 : 0.025;
+  const neutralAlbedo = {
+    r: tintLuminance,
+    g: tintLuminance,
+    b: tintLuminance
+  };
+  const albedoLinear = mixLinearColor(neutralAlbedo, boostedTintLinear, colorOpacity);
+  const albedoLuminance = getRelativeLuminanceLinear(albedoLinear);
+  const highlightStrength = clamp(0.05 + highlightProtection * 0.22, 0.04, 0.3);
 
-  // Keep stronger color in the midtones, but back off in bright highlights so finish texture stays visible.
+  // Treat Pantone as the surface albedo, then use the finish image only as luminance shading.
   const colorTransferTable = Array.from({ length: 256 }, (_, level) => {
     const sourceBrightness = level / 255;
-    const highlight = clamp((sourceBrightness - 0.82) / 0.18, 0, 1);
-    const shadow = clamp((0.38 - sourceBrightness) / 0.26, 0, 1);
-    const midtone = 1 - clamp(Math.abs(sourceBrightness - 0.55) / 0.55, 0, 1);
-    const adaptiveTintStrength = clamp(
-      colorOpacity *
-        (1 - Math.pow(highlight, 1.35) * highlightProtection) *
-        (0.97 + midtone * 0.05 - shadow * 0.03),
-      0,
-      1
+    const textureContrast = 1 + textureStrength * 1.4;
+    const tonalBrightness = clamp(0.68 + (sourceBrightness - 0.68) * textureContrast, 0, 1);
+    const shadow = 1 - smoothstep(0.28, 0.68, tonalBrightness);
+    const highlight = smoothstep(0.78, 0.98, sourceBrightness);
+    const lightPantoneShadowGain = smoothstep(0.42, 0.72, albedoLuminance);
+    const shade = clamp(
+      0.46 +
+        Math.pow(tonalBrightness, 1.08) * 0.72 -
+        shadow * (0.06 + lightPantoneShadowGain * 0.1),
+      0.28,
+      1.16
     );
-    const retainedBase = Math.max(0, 1 - adaptiveTintStrength);
-    const shade = clamp(Math.pow(sourceBrightness / 0.84, 1.08), 0.5 - shadow * 0.08, 1.08);
-    const specular = Math.pow(highlight, 2.35) * highlightLimit;
-    const rLinear = boostedTintLinear.r * shade * adaptiveTintStrength + specular;
-    const gLinear = boostedTintLinear.g * shade * adaptiveTintStrength + specular;
-    const bLinear = boostedTintLinear.b * shade * adaptiveTintStrength + specular;
+    const shadedAlbedo = {
+      r: clamp(albedoLinear.r * shade, 0, 1),
+      g: clamp(albedoLinear.g * shade, 0, 1),
+      b: clamp(albedoLinear.b * shade, 0, 1)
+    };
+    const specularAmount = Math.pow(highlight, 2.15) * highlightStrength * (1 - shadow * 0.7);
+    const highlighted = mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
 
     return {
-      r: linearChannelToSrgb(rLinear),
-      g: linearChannelToSrgb(gLinear),
-      b: linearChannelToSrgb(bLinear),
-      rLinear,
-      gLinear,
-      bLinear,
-      retainedBase,
-      detailStrength: clamp(textureStrength + midtone * 0.03 + highlight * 0.04, 0.04, 0.28)
+      r: linearChannelToSrgb(highlighted.r),
+      g: linearChannelToSrgb(highlighted.g),
+      b: linearChannelToSrgb(highlighted.b)
     };
   });
 
@@ -924,64 +933,10 @@ function createLayeredPartCanvas(params: {
     const sourceB = finishData.data[index + 2];
     const sourceBrightness = (sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722) / 255;
     const transfer = colorTransferTable[Math.round(sourceBrightness * 255)];
-    const sourceDetail = [
-      sourceR - sourceBrightness * 255,
-      sourceG - sourceBrightness * 255,
-      sourceB - sourceBrightness * 255
-    ];
-    const sourceLinear = {
-      r: srgbChannelToLinear(sourceR),
-      g: srgbChannelToLinear(sourceG),
-      b: srgbChannelToLinear(sourceB)
-    };
-    const sourceLuminanceLinear = getRelativeLuminanceLinear(sourceLinear);
-    const sourceTextureStrength = clamp(
-      (Math.abs(sourceR - sourceG) + Math.abs(sourceG - sourceB) + Math.abs(sourceB - sourceR)) /
-        510,
-      0,
-      1
-    );
-    const detailStrength = clamp(
-      transfer.detailStrength + sourceTextureStrength * 0.08,
-      0.04,
-      0.32
-    );
-    const tintedLinear = {
-      r: transfer.rLinear,
-      g: transfer.gLinear,
-      b: transfer.bLinear
-    };
-    const tintedLuminanceLinear = getRelativeLuminanceLinear(tintedLinear);
-    const renderedLinear =
-      transfer.retainedBase > 0
-        ? scaleLinearColorToTargetLuminance(
-            tintedLinear,
-            clamp(
-              tintedLuminanceLinear + sourceLuminanceLinear * transfer.retainedBase,
-              0,
-              1
-            )
-          )
-        : tintedLinear;
-    const renderedR = linearChannelToSrgb(renderedLinear.r);
-    const renderedG = linearChannelToSrgb(renderedLinear.g);
-    const renderedB = linearChannelToSrgb(renderedLinear.b);
 
-    outputData.data[index] = clamp(
-      Math.round(renderedR + sourceDetail[0] * detailStrength),
-      0,
-      255
-    );
-    outputData.data[index + 1] = clamp(
-      Math.round(renderedG + sourceDetail[1] * detailStrength),
-      0,
-      255
-    );
-    outputData.data[index + 2] = clamp(
-      Math.round(renderedB + sourceDetail[2] * detailStrength),
-      0,
-      255
-    );
+    outputData.data[index] = transfer.r;
+    outputData.data[index + 1] = transfer.g;
+    outputData.data[index + 2] = transfer.b;
     outputData.data[index + 3] = Math.round(maskAlpha * sourceAlpha * 255);
   }
 

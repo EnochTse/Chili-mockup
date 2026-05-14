@@ -123,21 +123,21 @@ describe("template.service", () => {
       },
       finishRules: {
         matte: {
-          colorOpacity: 0.9,
+          colorOpacity: 0.98,
           highlightProtection: 0.18,
-          textureStrength: 0.14,
-          saturationBoost: 0.05
+          textureStrength: 0.16,
+          saturationBoost: 0.06
         },
         glossy: {
-          colorOpacity: 0.9,
+          colorOpacity: 0.97,
           highlightProtection: 0.28,
-          textureStrength: 0.16,
+          textureStrength: 0.18,
           saturationBoost: 0.08
         },
         rubber: {
-          colorOpacity: 0.9,
+          colorOpacity: 0.98,
           highlightProtection: 0.2,
-          textureStrength: 0.15,
+          textureStrength: 0.18,
           saturationBoost: 0.06
         }
       }
