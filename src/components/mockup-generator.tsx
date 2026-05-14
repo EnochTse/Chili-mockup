@@ -804,6 +804,18 @@ function boostLinearTintSaturation(tint: LinearRgb, saturationBoost: number): Li
   };
 }
 
+function scaleLinearColorToTargetLuminance(color: LinearRgb, targetLuminance: number): LinearRgb {
+  const currentLuminance = getRelativeLuminanceLinear(color);
+  if (currentLuminance <= 0.0001) return color;
+
+  const scale = clamp(targetLuminance / currentLuminance, 0, 4);
+  return {
+    r: clamp(color.r * scale, 0, 1),
+    g: clamp(color.g * scale, 0, 1),
+    b: clamp(color.b * scale, 0, 1)
+  };
+}
+
 function getMaskAlpha(maskData: Uint8ClampedArray, index: number) {
   const r = maskData[index];
   const g = maskData[index + 1];
@@ -917,6 +929,12 @@ function createLayeredPartCanvas(params: {
       sourceG - sourceBrightness * 255,
       sourceB - sourceBrightness * 255
     ];
+    const sourceLinear = {
+      r: srgbChannelToLinear(sourceR),
+      g: srgbChannelToLinear(sourceG),
+      b: srgbChannelToLinear(sourceB)
+    };
+    const sourceLuminanceLinear = getRelativeLuminanceLinear(sourceLinear);
     const sourceTextureStrength = clamp(
       (Math.abs(sourceR - sourceG) + Math.abs(sourceG - sourceB) + Math.abs(sourceB - sourceR)) /
         510,
@@ -928,24 +946,26 @@ function createLayeredPartCanvas(params: {
       0.04,
       0.32
     );
-    const renderedR =
+    const tintedLinear = {
+      r: transfer.rLinear,
+      g: transfer.gLinear,
+      b: transfer.bLinear
+    };
+    const tintedLuminanceLinear = getRelativeLuminanceLinear(tintedLinear);
+    const renderedLinear =
       transfer.retainedBase > 0
-        ? linearChannelToSrgb(
-            transfer.rLinear + srgbChannelToLinear(sourceR) * transfer.retainedBase
+        ? scaleLinearColorToTargetLuminance(
+            tintedLinear,
+            clamp(
+              tintedLuminanceLinear + sourceLuminanceLinear * transfer.retainedBase,
+              0,
+              1
+            )
           )
-        : transfer.r;
-    const renderedG =
-      transfer.retainedBase > 0
-        ? linearChannelToSrgb(
-            transfer.gLinear + srgbChannelToLinear(sourceG) * transfer.retainedBase
-          )
-        : transfer.g;
-    const renderedB =
-      transfer.retainedBase > 0
-        ? linearChannelToSrgb(
-            transfer.bLinear + srgbChannelToLinear(sourceB) * transfer.retainedBase
-          )
-        : transfer.b;
+        : tintedLinear;
+    const renderedR = linearChannelToSrgb(renderedLinear.r);
+    const renderedG = linearChannelToSrgb(renderedLinear.g);
+    const renderedB = linearChannelToSrgb(renderedLinear.b);
 
     outputData.data[index] = clamp(
       Math.round(renderedR + sourceDetail[0] * detailStrength),
