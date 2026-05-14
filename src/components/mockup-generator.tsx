@@ -96,6 +96,12 @@ type Rgb = {
   b: number;
 };
 
+type Hsl = {
+  h: number;
+  s: number;
+  l: number;
+};
+
 type LayeredRenderImages = Partial<Record<ProductFinishOption, HTMLImageElement>>;
 
 type LogoTransform = {
@@ -303,6 +309,66 @@ function hexToRgb(hex: string): Rgb {
     r: Number.parseInt(value.slice(0, 2), 16),
     g: Number.parseInt(value.slice(2, 4), 16),
     b: Number.parseInt(value.slice(4, 6), 16)
+  };
+}
+
+function rgbToHsl(rgb: Rgb): Hsl {
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  const lightness = (max + min) / 2;
+
+  if (delta === 0) {
+    return { h: 0, s: 0, l: lightness };
+  }
+
+  const saturation =
+    lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  let hue = 0;
+
+  if (max === r) {
+    hue = (g - b) / delta + (g < b ? 6 : 0);
+  } else if (max === g) {
+    hue = (b - r) / delta + 2;
+  } else {
+    hue = (r - g) / delta + 4;
+  }
+
+  return {
+    h: hue / 6,
+    s: saturation,
+    l: lightness
+  };
+}
+
+function hueToRgb(p: number, q: number, t: number) {
+  let nextT = t;
+  if (nextT < 0) nextT += 1;
+  if (nextT > 1) nextT -= 1;
+  if (nextT < 1 / 6) return p + (q - p) * 6 * nextT;
+  if (nextT < 1 / 2) return q;
+  if (nextT < 2 / 3) return p + (q - p) * (2 / 3 - nextT) * 6;
+  return p;
+}
+
+function hslToRgb(hsl: Hsl): Rgb {
+  const { h, s, l } = hsl;
+
+  if (s === 0) {
+    const value = Math.round(l * 255);
+    return { r: value, g: value, b: value };
+  }
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+
+  return {
+    r: Math.round(hueToRgb(p, q, h + 1 / 3) * 255),
+    g: Math.round(hueToRgb(p, q, h) * 255),
+    b: Math.round(hueToRgb(p, q, h - 1 / 3) * 255)
   };
 }
 
@@ -806,6 +872,27 @@ function createLayeredPartCanvas(params: {
   outputCanvas.height = height;
   const outputContext = getCanvasContext(outputCanvas);
   const outputData = outputContext.createImageData(width, height);
+  const tintHsl = rgbToHsl(tint);
+  const materialLightness = clamp(tintHsl.l, 0.08, 0.86);
+  const materialSaturation = clamp(tintHsl.s * 1.14, 0, 1);
+  const colorTransferTable = Array.from({ length: 256 }, (_, level) => {
+    const sourceBrightness = level / 255;
+    const highlight = clamp((sourceBrightness - 0.78) / 0.22, 0, 1);
+    const shadow = clamp((0.5 - sourceBrightness) / 0.38, 0, 1);
+    const lightness =
+      materialLightness +
+      (sourceBrightness - 0.74) * (0.68 + (1 - materialLightness) * 0.12);
+    const saturation = materialSaturation * (1 - highlight * 0.18 - shadow * 0.06);
+
+    return {
+      color: hslToRgb({
+        h: tintHsl.h,
+        s: clamp(saturation, 0, 1),
+        l: clamp(lightness, 0.045, 0.96)
+      }),
+      specularWash: Math.pow(highlight, 1.9) * (0.14 + (1 - materialLightness) * 0.06)
+    };
+  });
 
   for (let index = 0; index < outputData.data.length; index += 4) {
     const maskAlpha = getMaskAlpha(maskData.data, index);
@@ -817,29 +904,41 @@ function createLayeredPartCanvas(params: {
     const sourceR = finishData.data[index];
     const sourceG = finishData.data[index + 1];
     const sourceB = finishData.data[index + 2];
-    const sourceBrightness = (sourceR + sourceG + sourceB) / (3 * 255);
-    const shade = clamp(0.36 + sourceBrightness * 0.82, 0.2, 1.18);
-    const contrastShade = clamp((shade - 0.5) * 1.14 + 0.5, 0.16, 1.22);
+    const sourceBrightness = (sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722) / 255;
+    const transfer = colorTransferTable[Math.round(sourceBrightness * 255)];
+    const { color: colorized, specularWash } = transfer;
     const sourceDetail = [
       sourceR - sourceBrightness * 255,
       sourceG - sourceBrightness * 255,
       sourceB - sourceBrightness * 255
     ];
-    const retainedBase = Math.max(0.02, 1 - colorOpacity);
-    const detailStrength = 0.16;
+    const retainedBase = Math.max(0.01, 1 - colorOpacity);
+    const detailStrength = 0.08 + (1 - materialLightness) * 0.04;
 
     outputData.data[index] = clamp(
-      Math.round(sourceR * retainedBase + tint.r * contrastShade * colorOpacity + sourceDetail[0] * detailStrength),
+      Math.round(
+        sourceR * retainedBase +
+          (colorized.r * (1 - specularWash) + 255 * specularWash) * colorOpacity +
+          sourceDetail[0] * detailStrength
+      ),
       0,
       255
     );
     outputData.data[index + 1] = clamp(
-      Math.round(sourceG * retainedBase + tint.g * contrastShade * colorOpacity + sourceDetail[1] * detailStrength),
+      Math.round(
+        sourceG * retainedBase +
+          (colorized.g * (1 - specularWash) + 255 * specularWash) * colorOpacity +
+          sourceDetail[1] * detailStrength
+      ),
       0,
       255
     );
     outputData.data[index + 2] = clamp(
-      Math.round(sourceB * retainedBase + tint.b * contrastShade * colorOpacity + sourceDetail[2] * detailStrength),
+      Math.round(
+        sourceB * retainedBase +
+          (colorized.b * (1 - specularWash) + 255 * specularWash) * colorOpacity +
+          sourceDetail[2] * detailStrength
+      ),
       0,
       255
     );
@@ -1402,14 +1501,22 @@ export default function MockupGenerator({
     ? getPrintingMethodPrompt(printingMethod).label
     : "Not selected";
 
+  const isLayeredTemplate = Boolean(
+    template?.layeredRender?.enabled && template.layeredRender.mode === "local-layered"
+  );
   const canGenerate =
     Boolean(template) &&
+    !isLayeredTemplate &&
     hasAllPartPantones &&
     Boolean(logoPrintColor) &&
     Boolean(printingMethod) &&
     Boolean(logoFile) &&
     !isSubmitting;
-  const canAdjustLogo = Boolean(result?.imageUrl && compositedPreviewUrl && logoFile && template);
+  const canAdjustLogo = Boolean(
+    (isLayeredTemplate ? previewImageUrl : result?.imageUrl) &&
+      logoFile &&
+      template
+  );
   const logoMoveXPercent = Math.round(logoTransform.offsetX * 100);
   const logoMoveYPercent = Math.round(logoTransform.offsetY * 100);
   const logoScalePercent = Math.round(logoTransform.scale * 100);
@@ -1454,12 +1561,19 @@ export default function MockupGenerator({
       };
     });
   }, [activePart, renderPreviewShellSize]);
-  const formStepDots = [
-    { kicker: "Step 1", label: "Colours" },
-    { kicker: "Step 2", label: "Branding" },
-    { kicker: "Step 3", label: "Generate" },
-    { kicker: "Step 4", label: "Adjust" }
-  ];
+  const formStepDots = isLayeredTemplate
+    ? [
+        { kicker: "Step 1", label: "Colours" },
+        { kicker: "Step 2", label: "Branding" },
+        { kicker: "Logo", label: "Adjust" }
+      ]
+    : [
+        { kicker: "Step 1", label: "Colours" },
+        { kicker: "Step 2", label: "Branding" },
+        { kicker: "Step 3", label: "Generate" },
+        { kicker: "Step 4", label: "Adjust" }
+      ];
+  const logoAdjustSectionIndex = isLayeredTemplate ? 2 : 3;
 
   function updateLogoTransform(next: LogoTransform | ((current: LogoTransform) => LogoTransform)) {
     setLogoTransform((current) =>
@@ -1776,9 +1890,13 @@ export default function MockupGenerator({
     <main className="mockup-page">
       <header className="page-header">
         <div className="site-bar">
-          <div className="brand-lockup">
+          <Link href="/" className="brand-lockup brand-home-link" aria-label="Back to homepage">
             <ChiliLogo className="brand-logo" />
-          </div>
+            <span className="brand-title-stack">
+              <span className="brand-product-title">Chili Product Mockup Generator</span>
+              <span className="brand-product-subtitle">Interactive product preview</span>
+            </span>
+          </Link>
           <div className="site-bar-actions">
             {availableTemplates.length > 0 ? (
               <label className="product-switcher">
@@ -1802,22 +1920,6 @@ export default function MockupGenerator({
             <span className="mode-pill">AI mockup studio</span>
           </div>
         </div>
-
-        <div className="page-intro">
-          <div className="hero-copy-stack">
-            <p className="eyebrow">Interactive product preview</p>
-            <h1 className="hero-title">Chili Product Mockup Generator</h1>
-            <p className="hero-support">
-              Configure colour, logo treatment, and finish in one calm workspace. Scroll through
-              each option, then generate a realistic reference mockup for review.
-            </p>
-          </div>
-          <div className="notice-panel">
-            <strong>Visual reference only.</strong> Final production artwork is confirmed
-            separately by the Chili design team.
-          </div>
-        </div>
-
       </header>
 
       {isTemplateLoading ? (
@@ -2082,15 +2184,26 @@ export default function MockupGenerator({
               <div className="panel-head config-panel-head">
                 <div>
                   <p className="panel-kicker">Configuration</p>
-                  <h2 className="section-title">Generate mockup</h2>
+                  <h2 className="section-title">
+                    {isLayeredTemplate ? "Configure live mockup" : "Generate mockup"}
+                  </h2>
                   <p className="panel-description">
-                    Build the request from top to bottom, then generate the preview when every
-                    required input is ready.
+                    {isLayeredTemplate
+                      ? "Adjust colours, material finish, and logo treatment while the preview updates on the canvas."
+                      : "Build the request from top to bottom, then generate the preview when every required input is ready."}
                   </p>
                 </div>
                 <div className="config-status-block">
-                  <span className={`status-pill${canGenerate ? " is-complete" : ""}`}>
-                    {canGenerate ? "Ready to generate" : "Configuration in progress"}
+                  <span
+                    className={`status-pill${
+                      isLayeredTemplate ? " is-complete" : canGenerate ? " is-complete" : ""
+                    }`}
+                  >
+                    {isLayeredTemplate
+                      ? "Live preview active"
+                      : canGenerate
+                        ? "Ready to generate"
+                        : "Configuration in progress"}
                   </span>
                   <p className="config-progress-copy">
                     {workflowCompletedSteps} of {workflowTotalSteps} required selections completed.
@@ -2404,51 +2517,56 @@ export default function MockupGenerator({
                   </div>
                 </section>
 
-                <section
-                  className="form-section form-submit-section"
-                  ref={(node) => {
-                    formSectionRefs.current[2] = node;
-                  }}
-                >
-                  <div className="form-section-head">
-                    <div>
-                      <p className="panel-kicker">Step 3</p>
-                      <h3 className="section-title">Generate output</h3>
+                {!isLayeredTemplate ? (
+                  <section
+                    className="form-section form-submit-section"
+                    ref={(node) => {
+                      formSectionRefs.current[2] = node;
+                    }}
+                  >
+                    <div className="form-section-head">
+                      <div>
+                        <p className="panel-kicker">Step 3</p>
+                        <h3 className="section-title">Generate output</h3>
+                      </div>
+                      <p className="section-caption">
+                        Review the checklist below, then create or refresh the preview.
+                      </p>
                     </div>
-                    <p className="section-caption">
-                      Review the checklist below, then create or refresh the preview.
-                    </p>
-                  </div>
 
-                  <div className="requirements-checklist" aria-label="Generation readiness">
-                    <div className={`requirement-chip${hasAllPartPantones ? " is-complete" : ""}`}>
-                      {hasAllPartPantones ? "All parts selected" : "Select every part color"}
+                    <div className="requirements-checklist" aria-label="Generation readiness">
+                      <div className={`requirement-chip${hasAllPartPantones ? " is-complete" : ""}`}>
+                        {hasAllPartPantones ? "All parts selected" : "Select every part color"}
+                      </div>
+                      <div className={`requirement-chip${logoPrintColor ? " is-complete" : ""}`}>
+                        {logoPrintColor ? "Logo color ready" : "Choose logo color"}
+                      </div>
+                      <div className={`requirement-chip${printingMethod ? " is-complete" : ""}`}>
+                        {printingMethod ? "Print method ready" : "Choose print method"}
+                      </div>
+                      <div className={`requirement-chip${logoFile ? " is-complete" : ""}`}>
+                        {logoFile ? "Logo uploaded" : "Upload client logo"}
+                      </div>
                     </div>
-                    <div className={`requirement-chip${logoPrintColor ? " is-complete" : ""}`}>
-                      {logoPrintColor ? "Logo color ready" : "Choose logo color"}
-                    </div>
-                    <div className={`requirement-chip${printingMethod ? " is-complete" : ""}`}>
-                      {printingMethod ? "Print method ready" : "Choose print method"}
-                    </div>
-                    <div className={`requirement-chip${logoFile ? " is-complete" : ""}`}>
-                      {logoFile ? "Logo uploaded" : "Upload client logo"}
-                    </div>
-                  </div>
 
-                  <button className="button-primary" type="submit" disabled={!canGenerate}>
-                    {isSubmitting ? "Generating..." : "Generate mockup"}
-                  </button>
-                </section>
+                    <button className="button-primary" type="submit" disabled={!canGenerate}>
+                      {isSubmitting ? "Generating..." : "Generate mockup"}
+                    </button>
+                  </section>
+                ) : null}
 
                 <section
                   className="form-section form-adjust-section"
                   ref={(node) => {
-                    formSectionRefs.current[3] = node;
+                    formSectionRefs.current[logoAdjustSectionIndex] = node;
+                    if (isLayeredTemplate) {
+                      formSectionRefs.current[3] = null;
+                    }
                   }}
                 >
                   <div className="form-section-head">
                     <div>
-                      <p className="panel-kicker">Step 4</p>
+                      <p className="panel-kicker">{isLayeredTemplate ? "Logo" : "Step 4"}</p>
                       <h3 className="section-title">Adjust logo placement</h3>
                     </div>
                     <p className="section-caption">
@@ -2469,26 +2587,6 @@ export default function MockupGenerator({
                       </div>
 
                       <div className="logo-adjust-actions">
-                          <button
-                            className="icon-action-button"
-                            type="button"
-                            title="Rotate 90 degrees counterclockwise"
-                            aria-label="Rotate 90 degrees counterclockwise"
-                            onClick={() => rotateLogoBy(-logoQuarterTurnDegrees)}
-                            disabled={!canAdjustLogo}
-                          >
-                            -90
-                          </button>
-                          <button
-                            className="icon-action-button"
-                            type="button"
-                            title="Rotate 90 degrees clockwise"
-                            aria-label="Rotate 90 degrees clockwise"
-                            onClick={() => rotateLogoBy(logoQuarterTurnDegrees)}
-                            disabled={!canAdjustLogo}
-                          >
-                            +90
-                          </button>
                           <button
                             className="secondary-link-button logo-reset-button"
                             type="button"
@@ -2573,7 +2671,31 @@ export default function MockupGenerator({
 
                         <div className="logo-slider-row logo-rotation-readout">
                           <span>Rotate</span>
-                          <div className="rotation-readout-track" aria-hidden="true" />
+                          <div className="rotation-control-stack">
+                            <div className="rotation-readout-track" aria-hidden="true" />
+                            <div className="rotation-pill-group" aria-label="Rotate logo">
+                              <button
+                                className="rotation-pill-button"
+                                type="button"
+                                title="Rotate 90 degrees counterclockwise"
+                                aria-label="Rotate 90 degrees counterclockwise"
+                                onClick={() => rotateLogoBy(-logoQuarterTurnDegrees)}
+                                disabled={!canAdjustLogo}
+                              >
+                                -90
+                              </button>
+                              <button
+                                className="rotation-pill-button"
+                                type="button"
+                                title="Rotate 90 degrees clockwise"
+                                aria-label="Rotate 90 degrees clockwise"
+                                onClick={() => rotateLogoBy(logoQuarterTurnDegrees)}
+                                disabled={!canAdjustLogo}
+                              >
+                                +90
+                              </button>
+                            </div>
+                          </div>
                           <output>{logoRotationDegrees}deg</output>
                         </div>
                       </div>
