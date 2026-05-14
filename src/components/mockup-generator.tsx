@@ -23,7 +23,7 @@ interface GenerateResponse {
   jobName?: string;
   state?: string;
   completed?: boolean;
-  provider?: "stub" | "gemini";
+  provider?: "stub" | "gemini" | "local-layered";
   model?: string;
   stubMode?: boolean;
   debug?: {
@@ -94,6 +94,8 @@ type Rgb = {
   g: number;
   b: number;
 };
+
+type LayeredRenderImages = Partial<Record<ProductFinishOption, HTMLImageElement>>;
 
 type LogoTransform = {
   offsetX: number;
@@ -702,6 +704,166 @@ async function composeMockupPreview(params: {
   return canvas.toDataURL("image/png");
 }
 
+const defaultLayeredFinishRule = {
+  colorOpacity: 0.85,
+  blendMode: "multiply" as GlobalCompositeOperation
+};
+
+function getMaskAlpha(maskData: Uint8ClampedArray, index: number) {
+  const r = maskData[index];
+  const g = maskData[index + 1];
+  const b = maskData[index + 2];
+  const a = maskData[index + 3] / 255;
+  const redDominance = r - Math.max(g, b);
+
+  if (r <= 180 || redDominance <= 60) return 0;
+
+  const redStrength = clamp((r - 180) / 75, 0, 1);
+  const dominanceStrength = clamp((redDominance - 60) / 135, 0, 1);
+  return redStrength * dominanceStrength * a;
+}
+
+function createLayeredPartCanvas(params: {
+  width: number;
+  height: number;
+  finishImage: HTMLImageElement;
+  maskImage: HTMLImageElement;
+  tint: Rgb;
+  colorOpacity: number;
+}) {
+  const { width, height, finishImage, maskImage, tint, colorOpacity } = params;
+  const finishCanvas = document.createElement("canvas");
+  finishCanvas.width = width;
+  finishCanvas.height = height;
+  const finishContext = getCanvasContext(finishCanvas);
+  finishContext.drawImage(finishImage, 0, 0, width, height);
+
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskContext = getCanvasContext(maskCanvas);
+  maskContext.drawImage(maskImage, 0, 0, width, height);
+
+  const finishData = finishContext.getImageData(0, 0, width, height);
+  const maskData = maskContext.getImageData(0, 0, width, height);
+  const outputCanvas = document.createElement("canvas");
+  outputCanvas.width = width;
+  outputCanvas.height = height;
+  const outputContext = getCanvasContext(outputCanvas);
+  const outputData = outputContext.createImageData(width, height);
+
+  for (let index = 0; index < outputData.data.length; index += 4) {
+    const maskAlpha = getMaskAlpha(maskData.data, index);
+    if (maskAlpha <= 0) continue;
+
+    const sourceAlpha = finishData.data[index + 3] / 255;
+    if (sourceAlpha <= 0) continue;
+
+    const sourceR = finishData.data[index];
+    const sourceG = finishData.data[index + 1];
+    const sourceB = finishData.data[index + 2];
+    const sourceBrightness = (sourceR + sourceG + sourceB) / (3 * 255);
+    const shade = clamp(0.42 + sourceBrightness * 0.68, 0.18, 1.12);
+    const sourceDetail = [
+      sourceR - sourceBrightness * 255,
+      sourceG - sourceBrightness * 255,
+      sourceB - sourceBrightness * 255
+    ];
+
+    outputData.data[index] = clamp(
+      Math.round(sourceR * (1 - colorOpacity) + tint.r * shade * colorOpacity + sourceDetail[0] * 0.12),
+      0,
+      255
+    );
+    outputData.data[index + 1] = clamp(
+      Math.round(sourceG * (1 - colorOpacity) + tint.g * shade * colorOpacity + sourceDetail[1] * 0.12),
+      0,
+      255
+    );
+    outputData.data[index + 2] = clamp(
+      Math.round(sourceB * (1 - colorOpacity) + tint.b * shade * colorOpacity + sourceDetail[2] * 0.12),
+      0,
+      255
+    );
+    outputData.data[index + 3] = Math.round(maskAlpha * sourceAlpha * 255);
+  }
+
+  outputContext.putImageData(outputData, 0, 0);
+  return outputCanvas;
+}
+
+async function renderLayeredProductMockup(params: {
+  template: TemplatePublicDto;
+  selectedPartPantones: SelectedPartPantone[];
+}) {
+  const layeredRender = params.template.layeredRender;
+  if (!layeredRender?.enabled) {
+    throw new Error("LAYERED_RENDER_NOT_CONFIGURED: This template is not configured for local rendering.");
+  }
+
+  const finishEntries = Object.entries(layeredRender.finishBaseImages) as Array<
+    [ProductFinishOption, string]
+  >;
+  const fallbackFinishUrl = layeredRender.finishBaseImages[layeredRender.fallbackFinish];
+  if (!fallbackFinishUrl) {
+    throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish image is missing.");
+  }
+
+  const [finishPairs, maskPairs] = await Promise.all([
+    Promise.all(
+      finishEntries.map(async ([finish, assetUrl]) => [
+        finish,
+        await loadImage(toAbsoluteAssetUrl(assetUrl))
+      ] as const)
+    ),
+    Promise.all(
+      Object.entries(layeredRender.partMasks).map(async ([partId, assetUrl]) => [
+        partId,
+        await loadImage(toAbsoluteAssetUrl(assetUrl))
+      ] as const)
+    )
+  ]);
+
+  const finishImages = Object.fromEntries(finishPairs) as LayeredRenderImages;
+  const maskImages = Object.fromEntries(maskPairs) as Record<string, HTMLImageElement>;
+  const fallbackImage = finishImages[layeredRender.fallbackFinish];
+  if (!fallbackImage) {
+    throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish image could not be loaded.");
+  }
+
+  const width = layeredRender.outputSize?.width || fallbackImage.naturalWidth || fallbackImage.width;
+  const height = layeredRender.outputSize?.height || fallbackImage.naturalHeight || fallbackImage.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = getCanvasContext(canvas);
+  context.drawImage(fallbackImage, 0, 0, width, height);
+
+  for (const selection of params.selectedPartPantones) {
+    const maskImage = maskImages[selection.partId];
+    if (!maskImage) continue;
+
+    const finish = selection.selectedFinish || layeredRender.fallbackFinish;
+    const finishImage = finishImages[finish] || fallbackImage;
+    const rule = layeredRender.finishRules?.[finish] || defaultLayeredFinishRule;
+    const partCanvas = createLayeredPartCanvas({
+      width,
+      height,
+      finishImage,
+      maskImage,
+      tint: hexToRgb(selection.pantone.previewHex),
+      colorOpacity: rule.colorOpacity
+    });
+
+    context.save();
+    context.globalCompositeOperation = rule.blendMode;
+    context.drawImage(partCanvas, 0, 0);
+    context.restore();
+  }
+
+  return canvas.toDataURL("image/png");
+}
+
 function humanizeOption(value: string) {
   return value
     .split("_")
@@ -1271,18 +1433,55 @@ export default function MockupGenerator({
     clearPreviewRetryTimeout();
     setIsSubmitting(true);
     setSubmitError(null);
-    setGenerationStatus("Preparing Gemini generation...");
+    setGenerationStatus(
+      template.layeredRender?.enabled
+        ? "Rendering layered BND62 preview..."
+        : "Preparing Gemini generation..."
+    );
     setCompositedPreviewUrl(null);
     setLogoTransform(createDefaultLogoTransform());
     setIsLogoDragging(false);
     logoDragStateRef.current = null;
 
     try {
+      const selectedPartPantones = buildSelectedPartPantones(template, partPantones, partFinishes);
+
+      if (template.layeredRender?.enabled && template.layeredRender.mode === "local-layered") {
+        const imageUrl = await renderLayeredProductMockup({
+          template,
+          selectedPartPantones
+        });
+
+        setResult({
+          success: true,
+          imageUrl,
+          provider: "local-layered",
+          completed: true,
+          state: "completed",
+          debug: {
+            provider: "local-layered",
+            templateId: template.id,
+            productSlug,
+            selectedPartPantones: selectedPartPantones.map((selection) => ({
+              partId: selection.partId,
+              partLabel: selection.partLabel,
+              pantoneCode: selection.pantoneCode,
+              selectedFinish: selection.selectedFinish
+            })),
+            baseProductImagePath: template.baseImageUrl,
+            instructionImagePath: template.instructionImageUrl,
+            logoFileName: logoFile.name,
+            promptUsed: "Local BND62 layered renderer"
+          }
+        });
+        setGenerationStatus(null);
+        return;
+      }
+
       const endpoint = getGenerateEndpoint();
       const requestMode = getGenerateRequestMode(endpoint);
       const startEndpoint = getGenerateStartEndpoint(endpoint);
       const statusEndpoint = getGenerateStatusEndpoint(endpoint);
-      const selectedPartPantones = buildSelectedPartPantones(template, partPantones, partFinishes);
 
       if (requestMode === "local-next-api") {
         const formData = makeGenerateFormData({

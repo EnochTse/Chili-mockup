@@ -31,6 +31,47 @@ const productSpecificationSchema = z.object({
 });
 
 const productFinishOptionSchema = z.enum(productFinishOptions);
+const canvasBlendModeSchema = z.enum([
+  "source-over",
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "color-dodge",
+  "color-burn",
+  "hard-light",
+  "soft-light",
+  "difference",
+  "exclusion",
+  "hue",
+  "saturation",
+  "color",
+  "luminosity"
+]);
+
+const layeredRenderSchema = z.object({
+  enabled: z.boolean(),
+  mode: z.literal("local-layered"),
+  outputSize: z
+    .object({
+      width: z.number().int().positive(),
+      height: z.number().int().positive()
+    })
+    .optional(),
+  fallbackFinish: productFinishOptionSchema,
+  finishBaseImages: z.partialRecord(productFinishOptionSchema, z.string().min(1)),
+  partMasks: z.record(z.string().min(1), z.string().min(1)),
+  finishRules: z
+    .partialRecord(
+      productFinishOptionSchema,
+      z.object({
+        colorOpacity: z.number().min(0).max(1),
+        blendMode: canvasBlendModeSchema
+      })
+    )
+    .optional()
+});
 
 const productColorPartSchema = z
   .object({
@@ -84,6 +125,7 @@ const templateSchema = z.object({
   pantoneLibrary: z.string().regex(libraryIdPattern).optional(),
   pantoneOptions: z.array(pantoneOptionSchema).min(1).optional(),
   colorParts: z.array(productColorPartSchema).min(1),
+  layeredRender: layeredRenderSchema.optional(),
   logoPlacement: z.object({
     description: z.string().min(1),
     maxWidthMm: z.number().positive(),
@@ -133,6 +175,32 @@ function resolvePublicAssetPath(folder: string, fileName: string) {
   }
 
   return resolved;
+}
+
+function resolveLayeredAssetPath(assetFolderPublicPath: string, assetReference: string) {
+  if (assetReference.startsWith("/")) {
+    const publicRoot = path.resolve(process.cwd(), "public");
+    const resolved = path.resolve(publicRoot, assetReference.replace(/^\/+/, ""));
+
+    if (!resolved.startsWith(publicRoot + path.sep)) {
+      throw new AppError("PRODUCT_TEMPLATE_NOT_FOUND", "The product template could not be found.", 404);
+    }
+
+    return resolved;
+  }
+
+  return resolvePublicAssetPath(assetFolderPublicPath, assetReference);
+}
+
+function toLayeredAssetPublicUrl(assetFolderPublicPath: string, assetReference: string) {
+  if (assetReference.startsWith("/")) return assetReference;
+  const folder = assetFolderPublicPath.replace(/\/$/, "");
+  const assetPath = assetReference
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `${folder}/${assetPath}`;
 }
 
 async function readTemplateConfig(productSlug: string): Promise<TemplateConfig> {
@@ -197,6 +265,27 @@ function resolveTemplatePartMasks(
   });
 }
 
+function resolveLayeredRenderAssets(template: ProductTemplate): ProductTemplate["layeredRender"] {
+  const layeredRender = template.layeredRender;
+  if (!layeredRender) return undefined;
+
+  return {
+    ...layeredRender,
+    finishBaseImages: Object.fromEntries(
+      Object.entries(layeredRender.finishBaseImages).map(([finish, assetReference]) => [
+        finish,
+        toLayeredAssetPublicUrl(template.assetFolderPublicPath, assetReference)
+      ])
+    ),
+    partMasks: Object.fromEntries(
+      Object.entries(layeredRender.partMasks).map(([partId, assetReference]) => [
+        partId,
+        toLayeredAssetPublicUrl(template.assetFolderPublicPath, assetReference)
+      ])
+    )
+  };
+}
+
 export async function loadTemplate(productSlug: string): Promise<ResolvedProductTemplate> {
   assertSafeSlug(productSlug);
   const templateConfig = await readTemplateConfig(productSlug);
@@ -215,6 +304,7 @@ export async function loadTemplate(productSlug: string): Promise<ResolvedProduct
   await validateTemplateAsset(instructionImagePath, "instruction");
 
   const colorParts = resolveTemplatePartMasks(template.assetFolderPublicPath, template.colorParts);
+  const layeredRender = resolveLayeredRenderAssets(template);
   await Promise.all(
     colorParts.map(async (part) => {
       if (part.partMaskImagePath) {
@@ -222,10 +312,27 @@ export async function loadTemplate(productSlug: string): Promise<ResolvedProduct
       }
     })
   );
+  if (template.layeredRender) {
+    await Promise.all([
+      ...Object.values(template.layeredRender.finishBaseImages).map((assetReference) =>
+        validateTemplateAsset(
+          resolveLayeredAssetPath(template.assetFolderPublicPath, assetReference),
+          "base"
+        )
+      ),
+      ...Object.values(template.layeredRender.partMasks).map((assetReference) =>
+        validateTemplateAsset(
+          resolveLayeredAssetPath(template.assetFolderPublicPath, assetReference),
+          "part_mask"
+        )
+      )
+    ]);
+  }
 
   return {
     ...template,
     colorParts,
+    layeredRender,
     baseImagePublicUrl: toPublicAssetUrl(
       template.assetFolderPublicPath,
       template.baseImageFileName
@@ -311,6 +418,7 @@ export function toTemplatePublicDto(template: ResolvedProductTemplate): Template
       defaultFinish: part.defaultFinish,
       indicatorAnchors: part.indicatorAnchors
     })),
+    layeredRender: template.layeredRender,
     logoPlacement: template.logoPlacement,
     constraints: template.constraints
   };

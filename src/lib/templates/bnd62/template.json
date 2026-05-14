@@ -67,9 +67,9 @@
       "allowedFinishes": [
         "matte",
         "glossy",
-        "metallic"
+        "rubber"
       ],
-      "defaultFinish": "metallic",
+      "defaultFinish": "glossy",
       "indicatorAnchors": [
         {
           "id": "part-2-indicator-1",
@@ -89,7 +89,7 @@
       "allowedFinishes": [
         "matte",
         "glossy",
-        "metallic"
+        "rubber"
       ],
       "defaultFinish": "glossy",
       "indicatorAnchors": [
@@ -103,6 +103,39 @@
       ]
     }
   ],
+  "layeredRender": {
+    "enabled": true,
+    "mode": "local-layered",
+    "outputSize": {
+      "width": 4096,
+      "height": 4096
+    },
+    "fallbackFinish": "matte",
+    "finishBaseImages": {
+      "matte": "layered/BND62_Matt.png",
+      "glossy": "layered/BND62_Glossy.png",
+      "rubber": "layered/BND62_Rubber.png"
+    },
+    "partMasks": {
+      "part-1-nan6hb": "layered/BND62_part_1.png",
+      "part-2-3ckhru": "layered/BND62_part_2.png",
+      "part-3-tzd2o2": "layered/BND62_part_3.png"
+    },
+    "finishRules": {
+      "matte": {
+        "colorOpacity": 0.85,
+        "blendMode": "multiply"
+      },
+      "glossy": {
+        "colorOpacity": 0.72,
+        "blendMode": "multiply"
+      },
+      "rubber": {
+        "colorOpacity": 0.9,
+        "blendMode": "multiply"
+      }
+    }
+  },
   "logoPlacement": {
     "description": "Place the logo only inside the marked safe area from the instruction image.",
     "maxWidthMm": 120,

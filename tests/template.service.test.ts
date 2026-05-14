@@ -103,4 +103,29 @@ describe("template.service", () => {
       instructionImageUrl: "/mockup-templates/umbrella-classic-black/instruction-image.jpg"
     });
   });
+
+  it("publishes BND62 layered render assets for the browser renderer", async () => {
+    const template = toTemplatePublicDto(await loadTemplate("bnd62"));
+
+    expect(template.layeredRender).toMatchObject({
+      enabled: true,
+      mode: "local-layered",
+      fallbackFinish: "matte",
+      finishBaseImages: {
+        matte: "/mockup-templates/bnd62/layered/BND62_Matt.png",
+        glossy: "/mockup-templates/bnd62/layered/BND62_Glossy.png",
+        rubber: "/mockup-templates/bnd62/layered/BND62_Rubber.png"
+      },
+      partMasks: {
+        "part-1-nan6hb": "/mockup-templates/bnd62/layered/BND62_part_1.png",
+        "part-2-3ckhru": "/mockup-templates/bnd62/layered/BND62_part_2.png",
+        "part-3-tzd2o2": "/mockup-templates/bnd62/layered/BND62_part_3.png"
+      }
+    });
+    expect(template.colorParts.map((part) => part.allowedFinishes)).toEqual([
+      ["matte", "glossy", "rubber"],
+      ["matte", "glossy", "rubber"],
+      ["matte", "glossy", "rubber"]
+    ]);
+  });
 });

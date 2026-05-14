@@ -11,6 +11,24 @@ export interface ProductSpecification {
 
 export type ProductFinishOption = "matte" | "glossy" | "rubber" | "metallic";
 
+export interface LayeredRenderFinishRule {
+  colorOpacity: number;
+  blendMode: GlobalCompositeOperation;
+}
+
+export interface LayeredRenderConfig {
+  enabled: boolean;
+  mode: "local-layered";
+  outputSize?: {
+    width: number;
+    height: number;
+  };
+  fallbackFinish: ProductFinishOption;
+  finishBaseImages: Partial<Record<ProductFinishOption, string>>;
+  partMasks: Record<string, string>;
+  finishRules?: Partial<Record<ProductFinishOption, LayeredRenderFinishRule>>;
+}
+
 export interface ProductColorPart {
   id: string;
   label: string;
@@ -79,6 +97,7 @@ export interface ProductTemplate {
   pantoneLibrary?: string;
   pantoneOptions: PantoneOption[];
   colorParts: ProductColorPart[];
+  layeredRender?: LayeredRenderConfig;
   logoPlacement: LogoPlacement;
   constraints: TemplateConstraints;
 }
@@ -118,6 +137,7 @@ export interface TemplatePublicDto {
   allowedPrintingMethods: string[];
   pantoneOptions: PantoneOption[];
   colorParts: TemplatePublicColorPart[];
+  layeredRender?: LayeredRenderConfig;
   logoPlacement: LogoPlacement;
   constraints: TemplateConstraints;
 }
