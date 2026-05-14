@@ -123,15 +123,15 @@
     },
     "finishRules": {
       "matte": {
-        "colorOpacity": 1,
+        "colorOpacity": 0.9,
         "blendMode": "source-over"
       },
       "glossy": {
-        "colorOpacity": 1,
+        "colorOpacity": 0.9,
         "blendMode": "source-over"
       },
       "rubber": {
-        "colorOpacity": 1,
+        "colorOpacity": 0.9,
         "blendMode": "source-over"
       }
     }
