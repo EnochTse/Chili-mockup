@@ -11,6 +11,7 @@ import { loadTemplate, toTemplatePublicDto } from "@/lib/services/template.servi
 import type {
   LayeredRenderConfig,
   LayeredRenderFinishRule,
+  LogoOrientationPreset,
   PartIndicatorAnchor,
   ProductColorPart,
   ProductFinishOption,
@@ -75,6 +76,11 @@ type LayeredRenderFormPayload = {
   finishBaseImages?: Partial<Record<ProductFinishOption, unknown>>;
   partMasks?: Record<string, unknown>;
   finishRules?: Partial<Record<ProductFinishOption, Partial<LayeredRenderFinishRule>>>;
+};
+
+type LogoPlacementFormPayload = {
+  orientationPreset?: unknown;
+  printingAreaImages?: Record<string, unknown>;
 };
 
 function normalizePartId(value: string, index: number) {
@@ -317,6 +323,18 @@ function buildFinishBaseAssetFileName(finish: ProductFinishOption, file: File) {
   return `layered/${finish}-base-${Date.now()}${extension}`;
 }
 
+function buildPrintingAreaAssetFileName(method: string, file: File) {
+  const extension = path.extname(file.name).toLowerCase();
+  const safeMethod =
+    method
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "printing-area";
+
+  return `printing/${safeMethod}-area-${Date.now()}${extension}`;
+}
+
 function decodeAssetPath(value: string) {
   try {
     return decodeURIComponent(value);
@@ -392,6 +410,10 @@ function buildLayeredFinishRules(
   return rules;
 }
 
+function normalizeLogoOrientationPreset(value: unknown): LogoOrientationPreset | undefined {
+  return value === "vertical" || value === "horizontal" ? value : undefined;
+}
+
 export async function saveTemplateFromFormData(formData: FormData): Promise<TemplatePublicDto> {
   const originalSlug = readOptionalString(formData, "originalSlug");
   const slug = readRequiredString(formData, "slug");
@@ -427,6 +449,10 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
   const layeredRenderForm = parseOptionalJsonField<LayeredRenderFormPayload>(
     formData,
     "layeredRender"
+  );
+  const logoPlacementForm = parseOptionalJsonField<LogoPlacementFormPayload>(
+    formData,
+    "logoPlacement"
   );
   const baseImage = validateImageFile(formData.get("baseImage") as File | null, "base image");
   const instructionImage = validateImageFile(
@@ -609,6 +635,40 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     };
   }
 
+  const printingAreaImages: Record<string, string> = {};
+  const rawPrintingAreaImages = logoPlacementForm?.printingAreaImages || {};
+  for (const method of defaultPrintingMethods) {
+    const existingAsset = normalizeTemplateAssetReference(
+      assetFolderPublicPath,
+      existingTemplate?.logoPlacement.printingAreaImages?.[method],
+      `${method} printing area image`
+    );
+    const requestedAsset = normalizeTemplateAssetReference(
+      assetFolderPublicPath,
+      rawPrintingAreaImages[method],
+      `${method} printing area image`
+    );
+
+    if (existingAsset) printingAreaImages[method] = existingAsset;
+    if (requestedAsset) printingAreaImages[method] = requestedAsset;
+
+    const uploadedPrintingArea = validateImageFile(
+      formData.get(`printingAreaImage:${method}`) as File | null,
+      `${method} printing area image`
+    );
+
+    if (uploadedPrintingArea) {
+      const printingAreaImageFileName = buildPrintingAreaAssetFileName(method, uploadedPrintingArea);
+      await writeFileFromUpload(path.resolve(assetDir, printingAreaImageFileName), uploadedPrintingArea);
+      printingAreaImages[method] = printingAreaImageFileName;
+    }
+  }
+
+  const orientationPreset =
+    normalizeLogoOrientationPreset(logoPlacementForm?.orientationPreset) ||
+    existingTemplate?.logoPlacement.orientationPreset ||
+    "horizontal";
+
   const template = {
     id: slug,
     slug,
@@ -627,13 +687,16 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     pantoneLibrary: "pantone-solid-coated-v3",
     colorParts: colorPartsWithUploadedMasks,
     ...(layeredRender ? { layeredRender } : {}),
-    logoPlacement:
-      existingTemplate?.logoPlacement || {
+    logoPlacement: {
+      ...(existingTemplate?.logoPlacement || {
         description: "Place the logo only inside the marked safe area from the instruction image.",
         maxWidthMm: 120,
         maxHeightMm: 45,
         notes: "Visual reference only; final artwork must be confirmed by Chili design team."
-      },
+      }),
+      orientationPreset,
+      ...(Object.keys(printingAreaImages).length ? { printingAreaImages } : {})
+    },
     constraints:
       existingTemplate?.constraints || {
         preserveBackground: true,

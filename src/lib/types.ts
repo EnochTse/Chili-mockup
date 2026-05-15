@@ -10,6 +10,7 @@ export interface ProductSpecification {
 }
 
 export type ProductFinishOption = "matte" | "glossy" | "rubber" | "metallic";
+export type LogoOrientationPreset = "horizontal" | "vertical";
 
 export interface LayeredRenderFinishRule {
   colorOpacity: number;
@@ -67,6 +68,8 @@ export interface LogoPlacement {
   maxWidthMm: number;
   maxHeightMm: number;
   notes: string;
+  orientationPreset?: LogoOrientationPreset;
+  printingAreaImages?: Record<string, string>;
 }
 
 export interface TemplateConstraints {

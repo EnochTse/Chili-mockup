@@ -9,8 +9,10 @@ import {
   productFinishOptions,
   resolvePartDefaultFinish
 } from "@/lib/services/finish-option.service";
+import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import type {
   LayeredRenderFinishRule,
+  LogoOrientationPreset,
   PartIndicatorAnchor,
   ProductColorPart,
   ProductFinishOption,
@@ -37,9 +39,19 @@ type EditorFormState = {
   layeredOutputHeight: string;
   layeredFinishBaseImages: Partial<Record<ProductFinishOption, string>>;
   layeredFinishRules: Partial<Record<ProductFinishOption, LayeredRenderFinishRule>>;
+  logoOrientationPreset: LogoOrientationPreset;
+  logoPrintingAreaImages: Record<string, string>;
 };
 
 const newTemplateKey = "__new__";
+const defaultPrintingMethods = [
+  "silk_screen",
+  "uv_print",
+  "heat_transfer",
+  "embroidery",
+  "laser_engraving",
+  "mirror_laser_engraving"
+];
 
 function createDraftPart(index: number): ProductColorPart {
   return {
@@ -88,7 +100,9 @@ function makeBlankFormState(): EditorFormState {
     layeredOutputWidth: "",
     layeredOutputHeight: "",
     layeredFinishBaseImages: {},
-    layeredFinishRules: {}
+    layeredFinishRules: {},
+    logoOrientationPreset: "horizontal",
+    logoPrintingAreaImages: {}
   };
 }
 
@@ -134,7 +148,9 @@ function buildFormStateFromTemplate(template: TemplatePublicDto): EditorFormStat
       ? String(template.layeredRender.outputSize.height)
       : "",
     layeredFinishBaseImages: template.layeredRender?.finishBaseImages || {},
-    layeredFinishRules: template.layeredRender?.finishRules || {}
+    layeredFinishRules: template.layeredRender?.finishRules || {},
+    logoOrientationPreset: template.logoPlacement.orientationPreset || "horizontal",
+    logoPrintingAreaImages: template.logoPlacement.printingAreaImages || {}
   };
 }
 
@@ -276,6 +292,40 @@ function FinishBaseAssetField({
       {previewUrl ? (
         <div className="catalog-image-frame compact-frame">
           <img src={previewUrl} alt={`${productFinishLabels[finish]} material base`} />
+        </div>
+      ) : null}
+      <input
+        className="input-shell"
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        onChange={(event) => onFileChange(event.target.files?.[0] || null)}
+      />
+      {pendingFile ? <p className="fine-print">Pending file: {pendingFile.name}</p> : null}
+      {currentUrl && !pendingFile ? <p className="fine-print">Current asset: {currentUrl}</p> : null}
+    </label>
+  );
+}
+
+function PrintingAreaAssetField({
+  method,
+  currentUrl,
+  pendingFile,
+  onFileChange
+}: {
+  method: string;
+  currentUrl: string;
+  pendingFile: File | null;
+  onFileChange: (file: File | null) => void;
+}) {
+  const previewUrl = useResolvedAssetPreview(pendingFile, currentUrl);
+  const methodLabel = getPrintingMethodPrompt(method).label;
+
+  return (
+    <label className="setup-field">
+      <span className="control-label">{methodLabel} printing area</span>
+      {previewUrl ? (
+        <div className="catalog-image-frame compact-frame">
+          <img src={previewUrl} alt={`${methodLabel} printing area`} />
         </div>
       ) : null}
       <input
@@ -499,6 +549,7 @@ export default function TemplateSetupStudio({
   const [finishBaseFiles, setFinishBaseFiles] = useState<
     Partial<Record<ProductFinishOption, File | null>>
   >({});
+  const [printingAreaFiles, setPrintingAreaFiles] = useState<Record<string, File | null>>({});
   const [draggedFinishOrder, setDraggedFinishOrder] = useState<{
     partId: string;
     finish: ProductFinishOption;
@@ -522,6 +573,10 @@ export default function TemplateSetupStudio({
   const isNewTemplate = selectedSlug === newTemplateKey || !selectedTemplate;
   const canSaveTemplate = canSaveTemplateInCurrentEnvironment();
   const saveModeLabel = canSaveTemplate ? "Local save enabled" : "Preview only";
+  const logoPrintingMethods =
+    selectedTemplate?.allowedPrintingMethods?.length
+      ? selectedTemplate.allowedPrintingMethods
+      : defaultPrintingMethods;
 
   function updateIndicatorAnchorField(
     partIndex: number,
@@ -545,6 +600,7 @@ export default function TemplateSetupStudio({
       setFormState(makeBlankFormState());
       setPartMaskFiles({});
       setFinishBaseFiles({});
+      setPrintingAreaFiles({});
       setDraggedFinishOrder(null);
       setSaveError(null);
       setSaveMessage(null);
@@ -558,6 +614,7 @@ export default function TemplateSetupStudio({
     setFormState(buildFormStateFromTemplate(template));
     setPartMaskFiles({});
     setFinishBaseFiles({});
+    setPrintingAreaFiles({});
     setDraggedFinishOrder(null);
     setSaveError(null);
     setSaveMessage(null);
@@ -574,6 +631,13 @@ export default function TemplateSetupStudio({
     setFinishBaseFiles((current) => ({
       ...current,
       [finish]: file
+    }));
+  }
+
+  function handlePrintingAreaFileChange(method: string, file: File | null) {
+    setPrintingAreaFiles((current) => ({
+      ...current,
+      [method]: file
     }));
   }
 
@@ -678,6 +742,13 @@ export default function TemplateSetupStudio({
           finishRules: formState.layeredFinishRules
         })
       );
+      formData.append(
+        "logoPlacement",
+        JSON.stringify({
+          orientationPreset: formState.logoOrientationPreset,
+          printingAreaImages: formState.logoPrintingAreaImages
+        })
+      );
       if (formState.baseImageFile) {
         formData.append("baseImage", formState.baseImageFile);
       }
@@ -694,6 +765,12 @@ export default function TemplateSetupStudio({
         const finishBaseFile = finishBaseFiles[finish];
         if (finishBaseFile) {
           formData.append(`finishBaseImage:${finish}`, finishBaseFile);
+        }
+      });
+      logoPrintingMethods.forEach((method) => {
+        const printingAreaFile = printingAreaFiles[method];
+        if (printingAreaFile) {
+          formData.append(`printingAreaImage:${method}`, printingAreaFile);
         }
       });
 
@@ -1585,6 +1662,52 @@ export default function TemplateSetupStudio({
                     </p>
                   ) : null}
                 </label>
+              </div>
+
+              <div className="setup-subsection">
+                <div className="setup-subsection-head">
+                  <div>
+                    <span className="control-label">Logo printing area and orientation</span>
+                    <p className="fine-print">
+                      Upload red-mask printing area images per printing method. Multiple red
+                      islands are supported; the mockup page keeps the logo inside the selected
+                      area.
+                    </p>
+                  </div>
+                </div>
+
+                <label className="setup-field">
+                  <span className="control-label">Logo orientation preset</span>
+                  <select
+                    className="input-shell"
+                    value={formState.logoOrientationPreset}
+                    onChange={(event) =>
+                      setFormState((current) => ({
+                        ...current,
+                        logoOrientationPreset: event.target.value as LogoOrientationPreset
+                      }))
+                    }
+                  >
+                    <option value="horizontal">Horizontal</option>
+                    <option value="vertical">Vertical</option>
+                  </select>
+                  <p className="fine-print">
+                    New uploaded logos auto-rotate to this orientation before fitting into the
+                    printing area.
+                  </p>
+                </label>
+
+                <div className="asset-upload-grid">
+                  {logoPrintingMethods.map((method) => (
+                    <PrintingAreaAssetField
+                      key={`printing-area-${method}`}
+                      method={method}
+                      currentUrl={formState.logoPrintingAreaImages[method] || ""}
+                      pendingFile={printingAreaFiles[method] || null}
+                      onFileChange={(file) => handlePrintingAreaFileChange(method, file)}
+                    />
+                  ))}
+                </div>
               </div>
 
               <div className="setup-subsection">

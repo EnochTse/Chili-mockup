@@ -67,6 +67,10 @@ type PixelRect = {
   height: number;
 };
 
+type LogoPlacementArea = PixelRect & {
+  area: number;
+};
+
 type Rgb = {
   r: number;
   g: number;
@@ -413,6 +417,188 @@ function detectGreenLogoArea(instructionImage: HTMLImageElement) {
   };
 }
 
+function resolvePrintingAreaImageUrl(template: TemplatePublicDto, printingMethod: string) {
+  const printingAreaImages = template.logoPlacement.printingAreaImages;
+  if (!printingAreaImages) return "";
+
+  return (
+    printingAreaImages[printingMethod] ||
+    printingAreaImages.default ||
+    Object.values(printingAreaImages)[0] ||
+    ""
+  );
+}
+
+function detectRedPrintingAreaRects(
+  printingAreaImage: HTMLImageElement,
+  targetWidth: number,
+  targetHeight: number
+): LogoPlacementArea[] {
+  const sourceWidth = printingAreaImage.naturalWidth || printingAreaImage.width;
+  const sourceHeight = printingAreaImage.naturalHeight || printingAreaImage.height;
+  const maxSampleDimension = 900;
+  const scale = Math.min(1, maxSampleDimension / Math.max(sourceWidth, sourceHeight));
+  const sampleWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const sampleHeight = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = sampleWidth;
+  canvas.height = sampleHeight;
+  const context = getCanvasContext(canvas);
+  context.drawImage(printingAreaImage, 0, 0, sampleWidth, sampleHeight);
+  const imageData = context.getImageData(0, 0, sampleWidth, sampleHeight);
+  const visited = new Uint8Array(sampleWidth * sampleHeight);
+  const queue = new Int32Array(sampleWidth * sampleHeight);
+  const areas: LogoPlacementArea[] = [];
+  const minComponentPixels = Math.max(12, Math.round(sampleWidth * sampleHeight * 0.00001));
+
+  function isPrintingAreaPixel(pixelIndex: number) {
+    const dataIndex = pixelIndex * 4;
+    const r = imageData.data[dataIndex];
+    const g = imageData.data[dataIndex + 1];
+    const b = imageData.data[dataIndex + 2];
+    const a = imageData.data[dataIndex + 3];
+    return a > 16 && r > 150 && r - Math.max(g, b) > 42;
+  }
+
+  for (let pixelIndex = 0; pixelIndex < visited.length; pixelIndex += 1) {
+    if (visited[pixelIndex] || !isPrintingAreaPixel(pixelIndex)) continue;
+
+    let queueStart = 0;
+    let queueEnd = 0;
+    let minX = sampleWidth;
+    let minY = sampleHeight;
+    let maxX = -1;
+    let maxY = -1;
+    let count = 0;
+
+    visited[pixelIndex] = 1;
+    queue[queueEnd] = pixelIndex;
+    queueEnd += 1;
+
+    while (queueStart < queueEnd) {
+      const currentPixel = queue[queueStart];
+      queueStart += 1;
+      const x = currentPixel % sampleWidth;
+      const y = Math.floor(currentPixel / sampleWidth);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      count += 1;
+
+      const neighbors = [
+        x > 0 ? currentPixel - 1 : -1,
+        x < sampleWidth - 1 ? currentPixel + 1 : -1,
+        y > 0 ? currentPixel - sampleWidth : -1,
+        y < sampleHeight - 1 ? currentPixel + sampleWidth : -1
+      ];
+
+      for (const neighbor of neighbors) {
+        if (neighbor < 0 || visited[neighbor] || !isPrintingAreaPixel(neighbor)) continue;
+        visited[neighbor] = 1;
+        queue[queueEnd] = neighbor;
+        queueEnd += 1;
+      }
+    }
+
+    if (count < minComponentPixels || maxX < minX || maxY < minY) continue;
+
+    const x = (minX / sampleWidth) * targetWidth;
+    const y = (minY / sampleHeight) * targetHeight;
+    const width = ((maxX - minX + 1) / sampleWidth) * targetWidth;
+    const height = ((maxY - minY + 1) / sampleHeight) * targetHeight;
+    areas.push({
+      x,
+      y,
+      width,
+      height,
+      area: width * height
+    });
+  }
+
+  return areas.sort((left, right) => right.area - left.area);
+}
+
+function rectCenter(rect: PixelRect) {
+  return {
+    x: rect.x + rect.width / 2,
+    y: rect.y + rect.height / 2
+  };
+}
+
+function insetPixelRect(rect: PixelRect, amount: number): PixelRect {
+  const safeAmount = Math.min(amount, rect.width * 0.35, rect.height * 0.35);
+  return {
+    x: rect.x + safeAmount,
+    y: rect.y + safeAmount,
+    width: Math.max(1, rect.width - safeAmount * 2),
+    height: Math.max(1, rect.height - safeAmount * 2)
+  };
+}
+
+function getRotatedBounds(width: number, height: number, rotation: number) {
+  const radians = (rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(radians));
+  const sin = Math.abs(Math.sin(radians));
+  return {
+    width: width * cos + height * sin,
+    height: width * sin + height * cos
+  };
+}
+
+function resolveLogoOrientationRotation(
+  preset: TemplatePublicDto["logoPlacement"]["orientationPreset"],
+  logoCanvas: HTMLCanvasElement
+) {
+  if (!preset) return 0;
+
+  const isLogoVertical = logoCanvas.height > logoCanvas.width;
+  if (preset === "vertical" && !isLogoVertical) return 90;
+  if (preset === "horizontal" && isLogoVertical) return 90;
+  return 0;
+}
+
+function chooseLogoPlacementArea(
+  areas: LogoPlacementArea[],
+  desiredCenter: { x: number; y: number }
+) {
+  if (!areas.length) return null;
+
+  return areas.reduce((bestArea, area) => {
+    const currentCenter = rectCenter(area);
+    const bestCenter = rectCenter(bestArea);
+    const currentDistance = Math.hypot(
+      desiredCenter.x - currentCenter.x,
+      desiredCenter.y - currentCenter.y
+    );
+    const bestDistance = Math.hypot(
+      desiredCenter.x - bestCenter.x,
+      desiredCenter.y - bestCenter.y
+    );
+    return currentDistance < bestDistance ? area : bestArea;
+  }, areas[0]);
+}
+
+function buildFallbackLogoArea(instructionImage: HTMLImageElement, width: number, height: number) {
+  const normalizedArea = detectGreenLogoArea(instructionImage);
+  return {
+    x: normalizedArea.x * width,
+    y: normalizedArea.y * height,
+    width: normalizedArea.width * width,
+    height: normalizedArea.height * height,
+    area: normalizedArea.width * width * normalizedArea.height * height
+  };
+}
+
+function normalizePixelRects(rects: PixelRect[], width: number, height: number) {
+  return rects.map((rect) => ({
+    x: rect.x / width,
+    y: rect.y / height,
+    width: rect.width / width,
+    height: rect.height / height
+  }));
+}
+
 function resolveLogoInkColor(params: {
   logoPrintColor: string;
   printingMethod: string;
@@ -605,10 +791,14 @@ async function composeMockupPreview(params: {
   partPantones: Record<string, string>;
   template: TemplatePublicDto;
 }) {
-  const [productImage, instructionImage, logoImage] = await Promise.all([
+  const printingAreaImageUrl = resolvePrintingAreaImageUrl(params.template, params.printingMethod);
+  const [productImage, instructionImage, logoImage, printingAreaImage] = await Promise.all([
     loadImage(params.productImageUrl),
     loadImage(params.instructionImageUrl),
-    loadFileImage(params.logoFile)
+    loadFileImage(params.logoFile),
+    printingAreaImageUrl
+      ? loadImage(toAbsoluteAssetUrl(printingAreaImageUrl))
+      : Promise.resolve(null)
   ]);
   const canvas = document.createElement("canvas");
   canvas.width = productImage.naturalWidth || productImage.width;
@@ -616,20 +806,12 @@ async function composeMockupPreview(params: {
   const context = getCanvasContext(canvas);
   context.drawImage(productImage, 0, 0, canvas.width, canvas.height);
 
-  const normalizedArea = detectGreenLogoArea(instructionImage);
-  const logoArea = {
-    x: normalizedArea.x * canvas.width,
-    y: normalizedArea.y * canvas.height,
-    width: normalizedArea.width * canvas.width,
-    height: normalizedArea.height * canvas.height
-  };
-  const padding = Math.min(logoArea.width, logoArea.height) * 0.12;
-  const usableArea = {
-    x: logoArea.x + padding,
-    y: logoArea.y + padding,
-    width: Math.max(1, logoArea.width - padding * 2),
-    height: Math.max(1, logoArea.height - padding * 2)
-  };
+  const detectedAreas = printingAreaImage
+    ? detectRedPrintingAreaRects(printingAreaImage, canvas.width, canvas.height)
+    : [];
+  const placementAreas = detectedAreas.length
+    ? detectedAreas
+    : [buildFallbackLogoArea(instructionImage, canvas.width, canvas.height)];
   const logoCanvas = createLogoArtworkCanvas(
     logoImage,
     resolveLogoInkColor({
@@ -640,13 +822,46 @@ async function composeMockupPreview(params: {
     })
   );
   const logoTransform = normalizeLogoTransform(params.logoTransform);
-  const scale =
-    Math.min(usableArea.width / logoCanvas.width, usableArea.height / logoCanvas.height) *
-    logoTransform.scale;
+  const defaultArea = placementAreas[0];
+  const defaultCenter = rectCenter(defaultArea);
+  const desiredCenter = {
+    x: defaultCenter.x + logoTransform.offsetX * canvas.width,
+    y: defaultCenter.y + logoTransform.offsetY * canvas.height
+  };
+  const logoArea = chooseLogoPlacementArea(placementAreas, desiredCenter) || defaultArea;
+  const padding = Math.min(logoArea.width, logoArea.height) * 0.06;
+  const usableArea = insetPixelRect(logoArea, padding);
+  const orientationRotation = resolveLogoOrientationRotation(
+    params.template.logoPlacement.orientationPreset,
+    logoCanvas
+  );
+  const finalRotation = normalizeLogoTransform({
+    ...logoTransform,
+    rotation: logoTransform.rotation + orientationRotation
+  }).rotation;
+  const naturalRotatedBounds = getRotatedBounds(
+    logoCanvas.width,
+    logoCanvas.height,
+    finalRotation
+  );
+  const baseScale = Math.min(
+    usableArea.width / Math.max(1, naturalRotatedBounds.width),
+    usableArea.height / Math.max(1, naturalRotatedBounds.height)
+  );
+  const scale = Math.max(0.01, baseScale * Math.min(logoTransform.scale, 1));
   const drawWidth = logoCanvas.width * scale;
   const drawHeight = logoCanvas.height * scale;
-  const centerX = usableArea.x + usableArea.width / 2 + logoTransform.offsetX * canvas.width;
-  const centerY = usableArea.y + usableArea.height / 2 + logoTransform.offsetY * canvas.height;
+  const rotatedBounds = getRotatedBounds(drawWidth, drawHeight, finalRotation);
+  const centerX = clamp(
+    desiredCenter.x,
+    usableArea.x + rotatedBounds.width / 2,
+    usableArea.x + usableArea.width - rotatedBounds.width / 2
+  );
+  const centerY = clamp(
+    desiredCenter.y,
+    usableArea.y + rotatedBounds.height / 2,
+    usableArea.y + usableArea.height - rotatedBounds.height / 2
+  );
   const drawRect = {
     x: centerX - drawWidth / 2,
     y: centerY - drawHeight / 2,
@@ -659,7 +874,7 @@ async function composeMockupPreview(params: {
     logoCanvas,
     rect: drawRect,
     printingMethod: params.printingMethod,
-    rotation: logoTransform.rotation
+    rotation: finalRotation
   });
 
   return canvas.toDataURL("image/png");
@@ -1042,6 +1257,8 @@ export default function MockupGenerator({
   const [isPreviewResolving, setIsPreviewResolving] = useState(false);
   const [logoTransform, setLogoTransform] = useState<LogoTransform>(createDefaultLogoTransform);
   const [isLogoDragging, setIsLogoDragging] = useState(false);
+  const [printingAreaPreviewRects, setPrintingAreaPreviewRects] = useState<PixelRect[]>([]);
+  const [showPrintingAreaHint, setShowPrintingAreaHint] = useState(false);
   const [isInstructionOpen, setIsInstructionOpen] = useState(false);
   const [focusedPartId, setFocusedPartId] = useState<string | null>(
     initialTemplate?.colorParts[0]?.id || null
@@ -1052,6 +1269,7 @@ export default function MockupGenerator({
   });
   const previewRetryCountRef = useRef(0);
   const previewRetryTimeoutRef = useRef<number | null>(null);
+  const printingAreaHintTimeoutRef = useRef<number | null>(null);
   const logoDragStateRef = useRef<LogoDragState | null>(null);
   const renderPanelRef = useRef<HTMLElement | null>(null);
   const formPanelRef = useRef<HTMLElement | null>(null);
@@ -1068,6 +1286,24 @@ export default function MockupGenerator({
       window.clearTimeout(previewRetryTimeoutRef.current);
       previewRetryTimeoutRef.current = null;
     }
+  }
+
+  function clearPrintingAreaHintTimeout() {
+    if (printingAreaHintTimeoutRef.current !== null) {
+      window.clearTimeout(printingAreaHintTimeoutRef.current);
+      printingAreaHintTimeoutRef.current = null;
+    }
+  }
+
+  function flashPrintingAreaHint() {
+    if (!printingAreaPreviewRects.length) return;
+
+    clearPrintingAreaHintTimeout();
+    setShowPrintingAreaHint(true);
+    printingAreaHintTimeoutRef.current = window.setTimeout(() => {
+      setShowPrintingAreaHint(false);
+      printingAreaHintTimeoutRef.current = null;
+    }, 2000);
   }
 
   function schedulePreviewRetry() {
@@ -1137,6 +1373,7 @@ export default function MockupGenerator({
   useEffect(() => {
     return () => {
       clearPreviewRetryTimeout();
+      clearPrintingAreaHintTimeout();
     };
   }, []);
 
@@ -1170,6 +1407,50 @@ export default function MockupGenerator({
     observer.observe(previewShell);
     return () => observer.disconnect();
   }, [template?.baseImageUrl, result?.imageUrl, previewImageUrl, compositedPreviewUrl]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    setShowPrintingAreaHint(false);
+    clearPrintingAreaHintTimeout();
+
+    if (!template) {
+      setPrintingAreaPreviewRects([]);
+      return;
+    }
+
+    const printingAreaImageUrl = resolvePrintingAreaImageUrl(template, printingMethod);
+    if (!printingAreaImageUrl) {
+      setPrintingAreaPreviewRects([]);
+      return;
+    }
+
+    loadImage(toAbsoluteAssetUrl(printingAreaImageUrl))
+      .then((printingAreaImage) => {
+        if (isCancelled) return;
+
+        const imageWidth = printingAreaImage.naturalWidth || printingAreaImage.width;
+        const imageHeight = printingAreaImage.naturalHeight || printingAreaImage.height;
+        const detectedRects = detectRedPrintingAreaRects(
+          printingAreaImage,
+          imageWidth,
+          imageHeight
+        );
+        setPrintingAreaPreviewRects(normalizePixelRects(detectedRects, imageWidth, imageHeight));
+      })
+      .catch(() => {
+        if (!isCancelled) setPrintingAreaPreviewRects([]);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [template, printingMethod]);
+
+  useEffect(() => {
+    if (!logoFile || !printingAreaPreviewRects.length) return;
+    flashPrintingAreaHint();
+  }, [logoFile, printingMethod, printingAreaPreviewRects.length]);
 
   useEffect(() => {
     if (!template) return;
@@ -1540,21 +1821,31 @@ export default function MockupGenerator({
       ];
   const logoAdjustSectionIndex = isLayeredTemplate ? 2 : 3;
 
-  function updateLogoTransform(next: LogoTransform | ((current: LogoTransform) => LogoTransform)) {
+  function updateLogoTransform(
+    next: LogoTransform | ((current: LogoTransform) => LogoTransform),
+    options?: { flashPrintingArea?: boolean }
+  ) {
+    if (options?.flashPrintingArea) {
+      flashPrintingAreaHint();
+    }
+
     setLogoTransform((current) =>
       normalizeLogoTransform(typeof next === "function" ? next(current) : next)
     );
   }
 
   function resetLogoTransform() {
-    updateLogoTransform(createDefaultLogoTransform());
+    updateLogoTransform(createDefaultLogoTransform(), { flashPrintingArea: true });
   }
 
   function rotateLogoBy(deltaDegrees: number) {
-    updateLogoTransform((current) => ({
-      ...current,
-      rotation: current.rotation + deltaDegrees
-    }));
+    updateLogoTransform(
+      (current) => ({
+        ...current,
+        rotation: current.rotation + deltaDegrees
+      }),
+      { flashPrintingArea: true }
+    );
   }
 
   function handleSaveImage() {
@@ -1577,6 +1868,7 @@ export default function MockupGenerator({
   function handleLogoPointerDown(event: React.PointerEvent<HTMLImageElement>) {
     if (!canAdjustLogo) return;
 
+    flashPrintingAreaHint();
     const imageBounds = event.currentTarget.getBoundingClientRect();
     logoDragStateRef.current = {
       pointerId: event.pointerId,
@@ -1748,6 +2040,28 @@ export default function MockupGenerator({
                       }}
                     />
 
+                    {printingAreaPreviewRects.length ? (
+                      <div
+                        className={`printing-area-hint-layer${
+                          showPrintingAreaHint ? " is-visible" : ""
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {printingAreaPreviewRects.map((rect, rectIndex) => (
+                          <div
+                            key={`printing-area-hint-${rectIndex}`}
+                            className="printing-area-hint-box"
+                            style={{
+                              left: `${rect.x * 100}%`,
+                              top: `${rect.y * 100}%`,
+                              width: `${rect.width * 100}%`,
+                              height: `${rect.height * 100}%`
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+
                     {activePart && activePartIndicators.length ? (
                       <div className="part-indicator-layer" aria-hidden="true">
                         <div className="part-indicator-caption">
@@ -1886,7 +2200,7 @@ export default function MockupGenerator({
                               updateLogoTransform((current) => ({
                                 ...current,
                                 offsetX: value
-                              }));
+                              }), { flashPrintingArea: true });
                             }}
                           />
                           <output>{logoMoveXPercent}%</output>
@@ -1907,7 +2221,7 @@ export default function MockupGenerator({
                               updateLogoTransform((current) => ({
                                 ...current,
                                 offsetY: value
-                              }));
+                              }), { flashPrintingArea: true });
                             }}
                           />
                           <output>{logoMoveYPercent}%</output>
@@ -1919,7 +2233,7 @@ export default function MockupGenerator({
                             id="logoScale"
                             type="range"
                             min="35"
-                            max="220"
+                            max="100"
                             step="1"
                             value={logoScalePercent}
                             disabled={!canAdjustLogo}
@@ -1928,7 +2242,7 @@ export default function MockupGenerator({
                               updateLogoTransform((current) => ({
                                 ...current,
                                 scale: value
-                              }));
+                              }), { flashPrintingArea: true });
                             }}
                           />
                           <output>{logoScalePercent}%</output>
@@ -2312,6 +2626,7 @@ export default function MockupGenerator({
                         setSubmitError(null);
                         setLogoFile(file);
                         setLogoTransform(createDefaultLogoTransform());
+                        if (file) flashPrintingAreaHint();
                         setIsLogoDragging(false);
                         logoDragStateRef.current = null;
                       }}
@@ -2428,7 +2743,7 @@ export default function MockupGenerator({
                               updateLogoTransform((current) => ({
                                 ...current,
                                 offsetX: value
-                              }));
+                              }), { flashPrintingArea: true });
                             }}
                           />
                           <output>{logoMoveXPercent}%</output>
@@ -2449,7 +2764,7 @@ export default function MockupGenerator({
                               updateLogoTransform((current) => ({
                                 ...current,
                                 offsetY: value
-                              }));
+                              }), { flashPrintingArea: true });
                             }}
                           />
                           <output>{logoMoveYPercent}%</output>
@@ -2461,7 +2776,7 @@ export default function MockupGenerator({
                             id="logoScale"
                             type="range"
                             min="35"
-                            max="220"
+                            max="100"
                             step="1"
                             value={logoScalePercent}
                             disabled={!canAdjustLogo}
@@ -2470,7 +2785,7 @@ export default function MockupGenerator({
                               updateLogoTransform((current) => ({
                                 ...current,
                                 scale: value
-                              }));
+                              }), { flashPrintingArea: true });
                             }}
                           />
                           <output>{logoScalePercent}%</output>

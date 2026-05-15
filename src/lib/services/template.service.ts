@@ -31,6 +31,7 @@ const productSpecificationSchema = z.object({
 });
 
 const productFinishOptionSchema = z.enum(productFinishOptions);
+const logoOrientationPresetSchema = z.enum(["horizontal", "vertical"]);
 const canvasBlendModeSchema = z.enum([
   "source-over",
   "multiply",
@@ -133,7 +134,9 @@ const templateSchema = z.object({
     description: z.string().min(1),
     maxWidthMm: z.number().positive(),
     maxHeightMm: z.number().positive(),
-    notes: z.string().min(1)
+    notes: z.string().min(1),
+    orientationPreset: logoOrientationPresetSchema.optional(),
+    printingAreaImages: z.record(z.string().min(1), z.string().min(1)).optional()
   }),
   constraints: z.object({
     preserveBackground: z.boolean(),
@@ -300,6 +303,22 @@ function resolveLayeredRenderAssets(template: ProductTemplate): ProductTemplate[
   };
 }
 
+function resolveLogoPlacementAssets(template: ProductTemplate): ProductTemplate["logoPlacement"] {
+  const printingAreaImages = template.logoPlacement.printingAreaImages;
+
+  if (!printingAreaImages) return template.logoPlacement;
+
+  return {
+    ...template.logoPlacement,
+    printingAreaImages: Object.fromEntries(
+      Object.entries(printingAreaImages).map(([method, assetReference]) => [
+        method,
+        toLayeredAssetPublicUrl(template.assetFolderPublicPath, assetReference)
+      ])
+    )
+  };
+}
+
 export async function loadTemplate(productSlug: string): Promise<ResolvedProductTemplate> {
   assertSafeSlug(productSlug);
   const templateConfig = await readTemplateConfig(productSlug);
@@ -342,11 +361,22 @@ export async function loadTemplate(productSlug: string): Promise<ResolvedProduct
       )
     ]);
   }
+  if (template.logoPlacement.printingAreaImages) {
+    await Promise.all(
+      Object.values(template.logoPlacement.printingAreaImages).map((assetReference) =>
+        validateTemplateAsset(
+          resolveLayeredAssetPath(template.assetFolderPublicPath, assetReference),
+          "part_mask"
+        )
+      )
+    );
+  }
 
   return {
     ...template,
     colorParts,
     layeredRender,
+    logoPlacement: resolveLogoPlacementAssets(template),
     baseImagePublicUrl: toPublicAssetUrl(
       template.assetFolderPublicPath,
       template.baseImageFileName

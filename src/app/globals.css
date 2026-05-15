@@ -1840,9 +1840,34 @@ input[type="file"].input-shell::file-selector-button {
   user-select: none;
 }
 
+.printing-area-hint-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 900ms var(--motion-ease);
+}
+
+.printing-area-hint-layer.is-visible {
+  opacity: 1;
+  transition-duration: 160ms;
+}
+
+.printing-area-hint-box {
+  position: absolute;
+  border: 1px solid rgba(0, 116, 255, 0.78);
+  border-radius: 7px;
+  background: rgba(60, 159, 255, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.42) inset,
+    0 12px 30px rgba(0, 116, 255, 0.18);
+}
+
 .part-indicator-layer {
   position: absolute;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
 }
 

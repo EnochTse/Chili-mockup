@@ -149,7 +149,16 @@
     "description": "Place the logo only inside the marked safe area from the instruction image.",
     "maxWidthMm": 120,
     "maxHeightMm": 45,
-    "notes": "Visual reference only; final artwork must be confirmed by Chili design team."
+    "notes": "Visual reference only; final artwork must be confirmed by Chili design team.",
+    "orientationPreset": "vertical",
+    "printingAreaImages": {
+      "silk_screen": "printing/BND62_printing_area.jpg",
+      "uv_print": "printing/BND62_printing_area.jpg",
+      "heat_transfer": "printing/BND62_printing_area.jpg",
+      "embroidery": "printing/BND62_printing_area.jpg",
+      "laser_engraving": "printing/BND62_printing_area.jpg",
+      "mirror_laser_engraving": "printing/BND62_printing_area.jpg"
+    }
   },
   "constraints": {
     "preserveBackground": true,
