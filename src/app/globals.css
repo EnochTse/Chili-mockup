@@ -1366,8 +1366,7 @@ input[type="file"].input-shell::file-selector-button {
 }
 
 .part-collapse-trigger {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: block;
   gap: var(--spacing-10, 10px);
   width: 100%;
   border: 0;
@@ -1378,32 +1377,15 @@ input[type="file"].input-shell::file-selector-button {
   text-align: left;
 }
 
-.part-collapse-trigger:hover .part-collapse-state {
-  background: var(--color-powder);
-}
-
-.part-collapse-state {
-  align-self: start;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: #ffffff;
-  color: var(--color-gravel);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 5px 10px;
-  transition:
-    background-color var(--motion-fast) ease,
-    color var(--motion-fast) ease,
-    transform 420ms cubic-bezier(0.19, 1, 0.22, 1);
+.part-collapse-trigger:focus-visible {
+  outline: 2px solid rgba(15, 16, 18, 0.18);
+  outline-offset: 5px;
+  border-radius: 14px;
 }
 
 .part-collapse-description {
   display: block;
   margin-top: 4px;
-}
-
-.part-selection-card.is-expanded .part-collapse-state {
-  color: var(--color-obsidian);
 }
 
 .part-selection-body {
@@ -1442,8 +1424,14 @@ input[type="file"].input-shell::file-selector-button {
 
 .part-selection-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--spacing-8);
+}
+
+.part-title-stack {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 
 .part-index-badge {
@@ -1480,10 +1468,6 @@ input[type="file"].input-shell::file-selector-button {
   flex-direction: column;
   gap: var(--spacing-8);
   margin-top: var(--spacing-12);
-}
-
-.finish-order-copy {
-  margin: 0;
 }
 
 .finish-default-field {

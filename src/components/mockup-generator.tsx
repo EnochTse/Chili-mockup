@@ -1485,7 +1485,8 @@ export default function MockupGenerator({
   const logoMoveYPercent = Math.round(logoTransform.offsetY * 100);
   const logoScalePercent = Math.round(logoTransform.scale * 100);
   const logoRotationDegrees = Math.round(logoTransform.rotation);
-  const activePartId = focusedPartId || openPartId || template?.colorParts[0]?.id || null;
+  const activePartId =
+    openPartId || expandedPartId || focusedPartId || template?.colorParts[0]?.id || null;
   const activePartIndex = template?.colorParts.findIndex((part) => part.id === activePartId) ?? -1;
   const activePart =
     activePartIndex >= 0 && template ? template.colorParts[activePartIndex] : null;
@@ -1567,12 +1568,10 @@ export default function MockupGenerator({
     section.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function toggleExpandedPart(partId: string) {
+  function selectExpandedPart(partId: string) {
     setFocusedPartId(partId);
-    setExpandedPartId((current) => (current === partId ? null : partId));
-    setOpenPartId((current) =>
-      expandedPartId === partId && current === partId ? null : current
-    );
+    setExpandedPartId(partId);
+    setOpenPartId((current) => (current === partId ? current : null));
   }
 
   function handleLogoPointerDown(event: React.PointerEvent<HTMLImageElement>) {
@@ -2052,7 +2051,7 @@ export default function MockupGenerator({
                         <div
                           key={part.id}
                           className={`part-selection-card${isFocusedPart ? " is-focused" : ""}${isMutedPart ? " is-muted" : ""}${isExpandedPart ? " is-expanded" : " is-collapsed"}`}
-                          onClick={() => setFocusedPartId(part.id)}
+                          onClick={() => selectExpandedPart(part.id)}
                           onPointerEnter={() => setFocusedPartId(part.id)}
                           onFocusCapture={() => setFocusedPartId(part.id)}
                         >
@@ -2063,23 +2062,22 @@ export default function MockupGenerator({
                               aria-expanded={isExpandedPart}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                toggleExpandedPart(part.id);
+                                selectExpandedPart(part.id);
                               }}
                             >
                               <div className="part-selection-title-row">
                                 <span className="part-index-badge" aria-hidden="true">
                                   {partNumber}
                                 </span>
-                                <span className="control-label">
-                                  {part.label} Pantone color
+                                <span className="part-title-stack">
+                                  <span className="control-label">
+                                    {part.label} Pantone color
+                                  </span>
+                                  <span className="fine-print part-collapse-description">
+                                    {part.description}
+                                  </span>
                                 </span>
                               </div>
-                              <span className="fine-print part-collapse-description">
-                                {part.description}
-                              </span>
-                              <span className="part-collapse-state">
-                                {isExpandedPart ? "Shrink" : "Open"}
-                              </span>
                             </button>
                             <button
                               id={`part-${part.id}`}
@@ -2117,7 +2115,7 @@ export default function MockupGenerator({
                                     type="button"
                                     className={`quick-color-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
                                     onClick={() => {
-                                      setFocusedPartId(part.id);
+                                      selectExpandedPart(part.id);
                                       setPartPantones((current) => ({
                                         ...current,
                                         [part.id]: option.code
@@ -2148,15 +2146,6 @@ export default function MockupGenerator({
                               {part.allowedFinishes?.length ? (
                                 <div className="part-finish-field">
                                   <span className="control-label">Material finish</span>
-                                  <p className="fine-print finish-order-copy">
-                                    Display order:{" "}
-                                    {part.allowedFinishes
-                                      .map(
-                                        (finish, finishIndex) =>
-                                          `${finishIndex + 1}. ${productFinishLabels[finish]}`
-                                      )
-                                      .join(" / ")}
-                                  </p>
                                   <div
                                     className="quick-choice-row"
                                     aria-label={`${part.label} finish options`}
@@ -2167,7 +2156,7 @@ export default function MockupGenerator({
                                         type="button"
                                         className={`quick-choice-button${selectedFinish === finish ? " is-active" : ""}`}
                                         onClick={() => {
-                                          setFocusedPartId(part.id);
+                                          selectExpandedPart(part.id);
                                           setPartFinishes((current) => ({
                                             ...current,
                                             [part.id]: finish
