@@ -1082,6 +1082,27 @@ input[type="file"].input-shell::file-selector-button {
   gap: var(--spacing-12);
 }
 
+.setup-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  box-shadow: var(--shadow-button);
+  color: var(--color-obsidian);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 var(--spacing-12);
+  white-space: nowrap;
+}
+
+.setup-toggle input {
+  accent-color: var(--color-obsidian);
+}
+
 .indicator-anchor-stack {
   display: flex;
   flex-direction: column;

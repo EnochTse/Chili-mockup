@@ -2,13 +2,18 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { AppError } from "@/lib/errors";
 import {
+  normalizeProductFinishOption,
+  productFinishOptions,
   resolvePartDefaultFinish,
   sanitizeAllowedFinishes
 } from "@/lib/services/finish-option.service";
 import { loadTemplate, toTemplatePublicDto } from "@/lib/services/template.service";
 import type {
+  LayeredRenderConfig,
+  LayeredRenderFinishRule,
   PartIndicatorAnchor,
   ProductColorPart,
+  ProductFinishOption,
   ProductSpecification,
   TemplatePublicDto
 } from "@/lib/types";
@@ -27,6 +32,50 @@ const defaultPrintingMethods = [
   "laser_engraving",
   "mirror_laser_engraving"
 ];
+
+const defaultLayeredFinishRules: Record<ProductFinishOption, LayeredRenderFinishRule> = {
+  matte: {
+    colorOpacity: 0.98,
+    blendMode: "source-over",
+    highlightProtection: 0.18,
+    textureStrength: 0.16,
+    saturationBoost: 0.06
+  },
+  glossy: {
+    colorOpacity: 0.97,
+    blendMode: "source-over",
+    highlightProtection: 0.28,
+    textureStrength: 0.18,
+    saturationBoost: 0.08
+  },
+  rubber: {
+    colorOpacity: 0.98,
+    blendMode: "source-over",
+    highlightProtection: 0.2,
+    textureStrength: 0.18,
+    saturationBoost: 0.06
+  },
+  metallic: {
+    colorOpacity: 0.96,
+    blendMode: "source-over",
+    highlightProtection: 0.34,
+    textureStrength: 0.2,
+    saturationBoost: 0.04
+  }
+};
+
+type LayeredRenderFormPayload = {
+  enabled?: unknown;
+  mode?: unknown;
+  outputSize?: {
+    width?: unknown;
+    height?: unknown;
+  };
+  fallbackFinish?: unknown;
+  finishBaseImages?: Partial<Record<ProductFinishOption, unknown>>;
+  partMasks?: Record<string, unknown>;
+  finishRules?: Partial<Record<ProductFinishOption, Partial<LayeredRenderFinishRule>>>;
+};
 
 function normalizePartId(value: string, index: number) {
   const normalized = value
@@ -75,6 +124,17 @@ function parseJsonField<T>(formData: FormData, fieldName: string): T {
   if (typeof value !== "string" || !value.trim()) {
     throw new AppError("INVALID_FORM_DATA", "Please complete all required template fields.", 400);
   }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    throw new AppError("INVALID_FORM_DATA", "Please complete all required template fields.", 400);
+  }
+}
+
+function parseOptionalJsonField<T>(formData: FormData, fieldName: string): T | undefined {
+  const value = formData.get(fieldName);
+  if (typeof value !== "string" || !value.trim()) return undefined;
 
   try {
     return JSON.parse(value) as T;
@@ -230,6 +290,7 @@ function sanitizeColorParts(
 
 async function writeFileFromUpload(targetPath: string, file: File) {
   const bytes = Buffer.from(await file.arrayBuffer());
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.writeFile(targetPath, bytes);
 }
 
@@ -248,7 +309,87 @@ async function exists(targetPath: string) {
 
 function buildPartMaskAssetFileName(partId: string, file: File, index: number) {
   const extension = path.extname(file.name).toLowerCase();
-  return `${partId}-mask-${Date.now()}-${index + 1}${extension}`;
+  return `layered/${partId}-mask-${Date.now()}-${index + 1}${extension}`;
+}
+
+function buildFinishBaseAssetFileName(finish: ProductFinishOption, file: File) {
+  const extension = path.extname(file.name).toLowerCase();
+  return `layered/${finish}-base-${Date.now()}${extension}`;
+}
+
+function decodeAssetPath(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeTemplateAssetReference(
+  assetFolderPublicPath: string,
+  assetReference: unknown,
+  fieldName: string
+) {
+  if (typeof assetReference !== "string") return undefined;
+
+  const normalized = assetReference.trim().replace(/\\/g, "/");
+  if (!normalized) return undefined;
+
+  const assetFolder = assetFolderPublicPath.replace(/\/$/, "");
+  if (normalized.startsWith(`${assetFolder}/`)) {
+    return decodeAssetPath(normalized.slice(assetFolder.length + 1));
+  }
+
+  if (normalized.startsWith("/")) {
+    throw new AppError(
+      "INVALID_FORM_DATA",
+      `${fieldName} must point to this product's asset folder.`,
+      400
+    );
+  }
+
+  return decodeAssetPath(normalized.replace(/^\/+/, ""));
+}
+
+function normalizeLayeredOutputSize(raw: LayeredRenderFormPayload | undefined) {
+  const width = Number(raw?.outputSize?.width);
+  const height = Number(raw?.outputSize?.height);
+
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return undefined;
+  if (width <= 0 || height <= 0) return undefined;
+
+  return {
+    width: Math.round(width),
+    height: Math.round(height)
+  };
+}
+
+function buildLayeredFinishRules(
+  finishes: ProductFinishOption[],
+  rawRules: LayeredRenderFormPayload["finishRules"]
+): Partial<Record<ProductFinishOption, LayeredRenderFinishRule>> {
+  const rules: Partial<Record<ProductFinishOption, LayeredRenderFinishRule>> = {};
+
+  for (const finish of finishes) {
+    const rawRule = rawRules?.[finish];
+    rules[finish] = {
+      ...defaultLayeredFinishRules[finish],
+      ...(typeof rawRule?.colorOpacity === "number"
+        ? { colorOpacity: Math.min(1, Math.max(0, rawRule.colorOpacity)) }
+        : {}),
+      ...(typeof rawRule?.highlightProtection === "number"
+        ? { highlightProtection: Math.min(1, Math.max(0, rawRule.highlightProtection)) }
+        : {}),
+      ...(typeof rawRule?.textureStrength === "number"
+        ? { textureStrength: Math.min(1, Math.max(0, rawRule.textureStrength)) }
+        : {}),
+      ...(typeof rawRule?.saturationBoost === "number"
+        ? { saturationBoost: Math.min(0.5, Math.max(0, rawRule.saturationBoost)) }
+        : {})
+    };
+  }
+
+  return rules;
 }
 
 export async function saveTemplateFromFormData(formData: FormData): Promise<TemplatePublicDto> {
@@ -283,6 +424,10 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
       }>
     >(formData, "colorParts")
   );
+  const layeredRenderForm = parseOptionalJsonField<LayeredRenderFormPayload>(
+    formData,
+    "layeredRender"
+  );
   const baseImage = validateImageFile(formData.get("baseImage") as File | null, "base image");
   const instructionImage = validateImageFile(
     formData.get("instructionImage") as File | null,
@@ -305,6 +450,7 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     );
   }
 
+  const assetFolderPublicPath = `/mockup-templates/${slug}`;
   const templateDir = path.resolve(process.cwd(), "src", "lib", "templates", slug);
   const assetDir = path.resolve(process.cwd(), "public", "mockup-templates", slug);
   await ensureDirectory(templateDir);
@@ -335,7 +481,15 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     );
   }
 
-  const colorPartsWithUploadedMasks = [...colorParts];
+  const colorPartsWithUploadedMasks = colorParts.map((part) => ({
+    ...part,
+    partMaskImageFileName: normalizeTemplateAssetReference(
+      assetFolderPublicPath,
+      part.partMaskImageFileName,
+      `${part.label} part reference image`
+    )
+  }));
+
   for (const [index, part] of colorPartsWithUploadedMasks.entries()) {
     const uploadedPartMask = validateImageFile(
       formData.get(`partMaskImage:${index}`) as File | null,
@@ -354,6 +508,107 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     };
   }
 
+  let layeredRender: LayeredRenderConfig | undefined;
+  if (layeredRenderForm?.enabled) {
+    const finishBaseImages: Partial<Record<ProductFinishOption, string>> = {};
+    const rawFinishBaseImages = layeredRenderForm.finishBaseImages || {};
+
+    for (const finish of productFinishOptions) {
+      const existingAsset = normalizeTemplateAssetReference(
+        assetFolderPublicPath,
+        existingTemplate?.layeredRender?.finishBaseImages?.[finish],
+        `${finish} finish base image`
+      );
+      const requestedAsset = normalizeTemplateAssetReference(
+        assetFolderPublicPath,
+        rawFinishBaseImages[finish],
+        `${finish} finish base image`
+      );
+
+      if (existingAsset) finishBaseImages[finish] = existingAsset;
+      if (requestedAsset) finishBaseImages[finish] = requestedAsset;
+
+      const uploadedFinishBase = validateImageFile(
+        formData.get(`finishBaseImage:${finish}`) as File | null,
+        `${finish} finish base image`
+      );
+
+      if (uploadedFinishBase) {
+        const finishBaseImageFileName = buildFinishBaseAssetFileName(finish, uploadedFinishBase);
+        await writeFileFromUpload(path.resolve(assetDir, finishBaseImageFileName), uploadedFinishBase);
+        finishBaseImages[finish] = finishBaseImageFileName;
+      }
+    }
+
+    const fallbackFinish =
+      normalizeProductFinishOption(layeredRenderForm.fallbackFinish) ||
+      existingTemplate?.layeredRender?.fallbackFinish ||
+      "matte";
+    const availableFallbackFinish =
+      finishBaseImages[fallbackFinish] ? fallbackFinish : productFinishOptions.find((finish) => finishBaseImages[finish]);
+
+    if (!availableFallbackFinish) {
+      throw new AppError(
+        "INVALID_TEMPLATE_ASSET",
+        "Please upload at least one material base image for local layered rendering.",
+        400
+      );
+    }
+
+    const requiredFinishes = Array.from(
+      new Set([
+        availableFallbackFinish,
+        ...colorPartsWithUploadedMasks.flatMap((part) => part.allowedFinishes || [])
+      ])
+    );
+    const missingFinish = requiredFinishes.find((finish) => !finishBaseImages[finish]);
+    if (missingFinish) {
+      throw new AppError(
+        "INVALID_TEMPLATE_ASSET",
+        `Please upload a ${missingFinish} base image before enabling local layered rendering.`,
+        400
+      );
+    }
+
+    const partMasks: Record<string, string> = {};
+    const rawPartMasks = layeredRenderForm.partMasks || {};
+    for (const [index, part] of colorPartsWithUploadedMasks.entries()) {
+      const requestedPartMask = normalizeTemplateAssetReference(
+        assetFolderPublicPath,
+        rawPartMasks[part.id],
+        `${part.label} part reference image`
+      );
+      const partMaskImageFileName = part.partMaskImageFileName || requestedPartMask;
+
+      if (!partMaskImageFileName) {
+        throw new AppError(
+          "INVALID_TEMPLATE_ASSET",
+          `Please upload a part reference image for ${part.label} before enabling local layered rendering.`,
+          400
+        );
+      }
+
+      partMasks[part.id] = partMaskImageFileName;
+      colorPartsWithUploadedMasks[index] = {
+        ...part,
+        partMaskImageFileName
+      };
+    }
+
+    const outputSize = normalizeLayeredOutputSize(layeredRenderForm) || existingTemplate?.layeredRender?.outputSize;
+    const finishRules = buildLayeredFinishRules(requiredFinishes, layeredRenderForm.finishRules);
+
+    layeredRender = {
+      enabled: true,
+      mode: "local-layered",
+      ...(outputSize ? { outputSize } : {}),
+      fallbackFinish: availableFallbackFinish,
+      finishBaseImages,
+      partMasks,
+      finishRules
+    };
+  }
+
   const template = {
     id: slug,
     slug,
@@ -362,7 +617,7 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     description,
     ...(size ? { size } : {}),
     specifications,
-    assetFolderPublicPath: `/mockup-templates/${slug}`,
+    assetFolderPublicPath,
     baseImageFileName,
     instructionImageFileName,
     usageType: "visual_reference_only" as const,
@@ -371,6 +626,7 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
     allowedPrintingMethods: existingTemplate?.allowedPrintingMethods || defaultPrintingMethods,
     pantoneLibrary: "pantone-solid-coated-v3",
     colorParts: colorPartsWithUploadedMasks,
+    ...(layeredRender ? { layeredRender } : {}),
     logoPlacement:
       existingTemplate?.logoPlacement || {
         description: "Place the logo only inside the marked safe area from the instruction image.",

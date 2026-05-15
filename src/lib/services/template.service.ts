@@ -165,7 +165,12 @@ function getTemplatePath(productSlug: string) {
 }
 
 function toPublicAssetUrl(folder: string, fileName: string) {
-  return `${folder.replace(/\/$/, "")}/${encodeURIComponent(fileName)}`;
+  const assetPath = fileName
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `${folder.replace(/\/$/, "")}/${assetPath}`;
 }
 
 function resolvePublicAssetPath(folder: string, fileName: string) {
@@ -258,12 +263,18 @@ function resolveTemplatePartMasks(
       return part;
     }
 
-    const partMaskImagePath = resolvePublicAssetPath(assetFolderPublicPath, part.partMaskImageFileName);
+    const partMaskImagePath = resolveLayeredAssetPath(
+      assetFolderPublicPath,
+      part.partMaskImageFileName
+    );
 
     return {
       ...part,
       partMaskImagePath,
-      partMaskImagePublicUrl: toPublicAssetUrl(assetFolderPublicPath, part.partMaskImageFileName)
+      partMaskImagePublicUrl: toLayeredAssetPublicUrl(
+        assetFolderPublicPath,
+        part.partMaskImageFileName
+      )
     };
   });
 }

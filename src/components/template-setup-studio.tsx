@@ -10,6 +10,7 @@ import {
   resolvePartDefaultFinish
 } from "@/lib/services/finish-option.service";
 import type {
+  LayeredRenderFinishRule,
   PartIndicatorAnchor,
   ProductColorPart,
   ProductFinishOption,
@@ -30,6 +31,12 @@ type EditorFormState = {
   instructionImageUrl: string;
   baseImageFile: File | null;
   instructionImageFile: File | null;
+  layeredRenderEnabled: boolean;
+  layeredFallbackFinish: ProductFinishOption;
+  layeredOutputWidth: string;
+  layeredOutputHeight: string;
+  layeredFinishBaseImages: Partial<Record<ProductFinishOption, string>>;
+  layeredFinishRules: Partial<Record<ProductFinishOption, LayeredRenderFinishRule>>;
 };
 
 const newTemplateKey = "__new__";
@@ -75,7 +82,13 @@ function makeBlankFormState(): EditorFormState {
     baseImageUrl: "",
     instructionImageUrl: "",
     baseImageFile: null,
-    instructionImageFile: null
+    instructionImageFile: null,
+    layeredRenderEnabled: false,
+    layeredFallbackFinish: "matte",
+    layeredOutputWidth: "",
+    layeredOutputHeight: "",
+    layeredFinishBaseImages: {},
+    layeredFinishRules: {}
   };
 }
 
@@ -100,6 +113,8 @@ function buildFormStateFromTemplate(template: TemplatePublicDto): EditorFormStat
     colorParts: template.colorParts.length
       ? template.colorParts.map((part, index) => ({
           ...part,
+          partMaskImageFileName:
+            part.partMaskImageFileName || template.layeredRender?.partMasks?.[part.id] || "",
           indicatorAnchors:
             part.indicatorAnchors?.length
               ? part.indicatorAnchors
@@ -109,7 +124,17 @@ function buildFormStateFromTemplate(template: TemplatePublicDto): EditorFormStat
     baseImageUrl: template.baseImageUrl,
     instructionImageUrl: template.instructionImageUrl,
     baseImageFile: null,
-    instructionImageFile: null
+    instructionImageFile: null,
+    layeredRenderEnabled: Boolean(template.layeredRender?.enabled),
+    layeredFallbackFinish: template.layeredRender?.fallbackFinish || "matte",
+    layeredOutputWidth: template.layeredRender?.outputSize?.width
+      ? String(template.layeredRender.outputSize.width)
+      : "",
+    layeredOutputHeight: template.layeredRender?.outputSize?.height
+      ? String(template.layeredRender.outputSize.height)
+      : "",
+    layeredFinishBaseImages: template.layeredRender?.finishBaseImages || {},
+    layeredFinishRules: template.layeredRender?.finishRules || {}
   };
 }
 
@@ -205,6 +230,39 @@ function useResolvedAssetPreview(file: File | null, fallbackUrl: string) {
   }, [file, fallbackUrl]);
 
   return previewUrl;
+}
+
+function FinishBaseAssetField({
+  finish,
+  currentUrl,
+  pendingFile,
+  onFileChange
+}: {
+  finish: ProductFinishOption;
+  currentUrl: string;
+  pendingFile: File | null;
+  onFileChange: (file: File | null) => void;
+}) {
+  const previewUrl = useResolvedAssetPreview(pendingFile, currentUrl);
+
+  return (
+    <label className="setup-field">
+      <span className="control-label">{productFinishLabels[finish]} base image</span>
+      {previewUrl ? (
+        <div className="catalog-image-frame compact-frame">
+          <img src={previewUrl} alt={`${productFinishLabels[finish]} material base`} />
+        </div>
+      ) : null}
+      <input
+        className="input-shell"
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        onChange={(event) => onFileChange(event.target.files?.[0] || null)}
+      />
+      {pendingFile ? <p className="fine-print">Pending file: {pendingFile.name}</p> : null}
+      {currentUrl && !pendingFile ? <p className="fine-print">Current asset: {currentUrl}</p> : null}
+    </label>
+  );
 }
 
 function PartIndicatorVisualEditor({
@@ -413,6 +471,9 @@ export default function TemplateSetupStudio({
     initialTemplates[0] ? buildFormStateFromTemplate(initialTemplates[0]) : makeBlankFormState()
   );
   const [partMaskFiles, setPartMaskFiles] = useState<Record<string, File | null>>({});
+  const [finishBaseFiles, setFinishBaseFiles] = useState<
+    Partial<Record<ProductFinishOption, File | null>>
+  >({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -454,6 +515,7 @@ export default function TemplateSetupStudio({
       setSelectedSlug(newTemplateKey);
       setFormState(makeBlankFormState());
       setPartMaskFiles({});
+      setFinishBaseFiles({});
       setSaveError(null);
       setSaveMessage(null);
       return;
@@ -465,6 +527,7 @@ export default function TemplateSetupStudio({
     setSelectedSlug(slug);
     setFormState(buildFormStateFromTemplate(template));
     setPartMaskFiles({});
+    setFinishBaseFiles({});
     setSaveError(null);
     setSaveMessage(null);
   }
@@ -473,6 +536,13 @@ export default function TemplateSetupStudio({
     setPartMaskFiles((current) => ({
       ...current,
       [partId]: file
+    }));
+  }
+
+  function handleFinishBaseFileChange(finish: ProductFinishOption, file: File | null) {
+    setFinishBaseFiles((current) => ({
+      ...current,
+      [finish]: file
     }));
   }
 
@@ -555,6 +625,28 @@ export default function TemplateSetupStudio({
       formData.append("size", formState.size);
       formData.append("specifications", JSON.stringify(formState.specifications));
       formData.append("colorParts", JSON.stringify(formState.colorParts));
+      formData.append(
+        "layeredRender",
+        JSON.stringify({
+          enabled: formState.layeredRenderEnabled,
+          mode: "local-layered",
+          outputSize:
+            formState.layeredOutputWidth && formState.layeredOutputHeight
+              ? {
+                  width: Number(formState.layeredOutputWidth),
+                  height: Number(formState.layeredOutputHeight)
+                }
+              : undefined,
+          fallbackFinish: formState.layeredFallbackFinish,
+          finishBaseImages: formState.layeredFinishBaseImages,
+          partMasks: Object.fromEntries(
+            formState.colorParts
+              .filter((part) => part.partMaskImageFileName)
+              .map((part) => [part.id, part.partMaskImageFileName])
+          ),
+          finishRules: formState.layeredFinishRules
+        })
+      );
       if (formState.baseImageFile) {
         formData.append("baseImage", formState.baseImageFile);
       }
@@ -565,6 +657,12 @@ export default function TemplateSetupStudio({
         const partMaskFile = partMaskFiles[part.id];
         if (partMaskFile) {
           formData.append(`partMaskImage:${index}`, partMaskFile);
+        }
+      });
+      productFinishOptions.forEach((finish) => {
+        const finishBaseFile = finishBaseFiles[finish];
+        if (finishBaseFile) {
+          formData.append(`finishBaseImage:${finish}`, finishBaseFile);
         }
       });
 
@@ -605,6 +703,7 @@ export default function TemplateSetupStudio({
       setSelectedSlug(savedTemplate.slug);
       setFormState(buildFormStateFromTemplate(savedTemplate));
       setPartMaskFiles({});
+      setFinishBaseFiles({});
       setSaveMessage("Product template saved locally.");
       startTransition(() => {
         router.refresh();
@@ -1042,7 +1141,7 @@ export default function TemplateSetupStudio({
                       </label>
 
                       <label className="setup-field">
-                        <span className="control-label">Part mask image file</span>
+                        <span className="control-label">Part reference image file</span>
                         <input
                           className="input-shell"
                           value={part.partMaskImageFileName || ""}
@@ -1056,20 +1155,20 @@ export default function TemplateSetupStudio({
                               )
                             }))
                           }
-                          placeholder="part-1-mask.png"
+                          placeholder="layered/part-1-mask.png"
                         />
                       </label>
                     </div>
                     <p className="fine-print">
-                      Optional. Add a per-part mask image file name stored in
+                      Optional. Add a per-part reference or mask image stored in
                       {` `}
                       <code>{`/public/mockup-templates/${formState.slug || "<slug>"}/`}</code>
                       {` `}
-                      to give Gemini an isolated location reference for this exact part.
+                      for local layered coloring and isolated AI part references.
                     </p>
                     <div className="setup-inline-actions">
                       <label className="secondary-link-button" htmlFor={`partMaskUpload-${part.id}`}>
-                        Upload mask image
+                        Upload part reference
                       </label>
                       <input
                         id={`partMaskUpload-${part.id}`}
@@ -1088,14 +1187,18 @@ export default function TemplateSetupStudio({
                           className="secondary-link-button"
                           onClick={() => handlePartMaskFileChange(part.id, null)}
                         >
-                          Clear pending mask
+                          Clear pending reference
                         </button>
                       ) : null}
                     </div>
                     {partMaskFiles[part.id] ? (
-                      <p className="fine-print">Pending mask upload: {partMaskFiles[part.id]?.name}</p>
+                      <p className="fine-print">
+                        Pending reference upload: {partMaskFiles[part.id]?.name}
+                      </p>
                     ) : part.partMaskImageFileName ? (
-                      <p className="fine-print">Current mask asset: {part.partMaskImageFileName}</p>
+                      <p className="fine-print">
+                        Current reference asset: {part.partMaskImageFileName}
+                      </p>
                     ) : null}
 
                     <div className="setup-subsection">
@@ -1391,6 +1494,101 @@ export default function TemplateSetupStudio({
                     </p>
                   ) : null}
                 </label>
+              </div>
+
+              <div className="setup-subsection">
+                <div className="setup-subsection-head">
+                  <div>
+                    <span className="control-label">Local layered renderer</span>
+                    <p className="fine-print">
+                      Upload neutral material bases and part references to use the same local coloring
+                      system as BND62.
+                    </p>
+                  </div>
+                  <label className="setup-toggle">
+                    <input
+                      type="checkbox"
+                      checked={formState.layeredRenderEnabled}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          layeredRenderEnabled: event.target.checked
+                        }))
+                      }
+                    />
+                    <span>Enable</span>
+                  </label>
+                </div>
+
+                <div className="field-grid">
+                  <label className="setup-field">
+                    <span className="control-label">Fallback material</span>
+                    <select
+                      className="input-shell"
+                      value={formState.layeredFallbackFinish}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          layeredFallbackFinish: event.target.value as ProductFinishOption
+                        }))
+                      }
+                    >
+                      {productFinishOptions.map((finish) => (
+                        <option key={`fallback-${finish}`} value={finish}>
+                          {productFinishLabels[finish]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="setup-field">
+                    <span className="control-label">Output width</span>
+                    <input
+                      className="input-shell"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={formState.layeredOutputWidth}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          layeredOutputWidth: event.target.value
+                        }))
+                      }
+                      placeholder="Use base image width"
+                    />
+                  </label>
+
+                  <label className="setup-field">
+                    <span className="control-label">Output height</span>
+                    <input
+                      className="input-shell"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={formState.layeredOutputHeight}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          layeredOutputHeight: event.target.value
+                        }))
+                      }
+                      placeholder="Use base image height"
+                    />
+                  </label>
+                </div>
+
+                <div className="asset-upload-grid">
+                  {productFinishOptions.map((finish) => (
+                    <FinishBaseAssetField
+                      key={`finish-base-${finish}`}
+                      finish={finish}
+                      currentUrl={formState.layeredFinishBaseImages[finish] || ""}
+                      pendingFile={finishBaseFiles[finish] || null}
+                      onFileChange={(file) => handleFinishBaseFileChange(finish, file)}
+                    />
+                  ))}
+                </div>
               </div>
             </section>
 
