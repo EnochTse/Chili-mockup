@@ -1,5 +1,5 @@
 {
-  "name": "chili-ai-mockup-generator",
+  "name": "chili-mockup-generator",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -15,7 +15,6 @@
     "typecheck": "tsc --project tsconfig.typecheck.json --noEmit --incremental false"
   },
   "dependencies": {
-    "@google/genai": "1.51.0",
     "@tailwindcss/postcss": "4.2.4",
     "gsap": "^3.12.7",
     "next": "16.2.4",

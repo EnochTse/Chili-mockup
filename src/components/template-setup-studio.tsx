@@ -165,6 +165,31 @@ function toggleFinishOption(
   };
 }
 
+function moveFinishOption(
+  part: ProductColorPart,
+  fromIndex: number,
+  toIndex: number
+): ProductColorPart {
+  const current = [...(part.allowedFinishes || [])];
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= current.length ||
+    toIndex >= current.length ||
+    fromIndex === toIndex
+  ) {
+    return part;
+  }
+
+  const [movedFinish] = current.splice(fromIndex, 1);
+  current.splice(toIndex, 0, movedFinish);
+
+  return {
+    ...part,
+    allowedFinishes: current
+  };
+}
+
 function clampPercent(value: number, min = 0, max = 100) {
   return Math.min(max, Math.max(min, value));
 }
@@ -474,6 +499,10 @@ export default function TemplateSetupStudio({
   const [finishBaseFiles, setFinishBaseFiles] = useState<
     Partial<Record<ProductFinishOption, File | null>>
   >({});
+  const [draggedFinishOrder, setDraggedFinishOrder] = useState<{
+    partId: string;
+    finish: ProductFinishOption;
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -516,6 +545,7 @@ export default function TemplateSetupStudio({
       setFormState(makeBlankFormState());
       setPartMaskFiles({});
       setFinishBaseFiles({});
+      setDraggedFinishOrder(null);
       setSaveError(null);
       setSaveMessage(null);
       return;
@@ -528,6 +558,7 @@ export default function TemplateSetupStudio({
     setFormState(buildFormStateFromTemplate(template));
     setPartMaskFiles({});
     setFinishBaseFiles({});
+    setDraggedFinishOrder(null);
     setSaveError(null);
     setSaveMessage(null);
   }
@@ -1164,7 +1195,7 @@ export default function TemplateSetupStudio({
                       {` `}
                       <code>{`/public/mockup-templates/${formState.slug || "<slug>"}/`}</code>
                       {` `}
-                      for local layered coloring and isolated AI part references.
+                      for local layered coloring and isolated part references.
                     </p>
                     <div className="setup-inline-actions">
                       <label className="secondary-link-button" htmlFor={`partMaskUpload-${part.id}`}>
@@ -1234,6 +1265,66 @@ export default function TemplateSetupStudio({
                           );
                         })}
                       </div>
+
+                      {part.allowedFinishes?.length ? (
+                        <div className="finish-order-panel">
+                          <span className="control-label">Material finish display order</span>
+                          <div
+                            className="finish-order-list"
+                            aria-label={`${part.label} material finish display order`}
+                          >
+                            {part.allowedFinishes.map((finish, finishIndex) => (
+                              <button
+                                key={`${part.id}-order-${finish}`}
+                                type="button"
+                                className={`finish-order-item${
+                                  draggedFinishOrder?.partId === part.id &&
+                                  draggedFinishOrder.finish === finish
+                                    ? " is-dragging"
+                                    : ""
+                                }`}
+                                draggable
+                                onDragStart={(event) => {
+                                  setDraggedFinishOrder({ partId: part.id, finish });
+                                  event.dataTransfer.effectAllowed = "move";
+                                  event.dataTransfer.setData("text/plain", finish);
+                                }}
+                                onDragOver={(event) => {
+                                  event.preventDefault();
+                                  event.dataTransfer.dropEffect = "move";
+                                }}
+                                onDrop={(event) => {
+                                  event.preventDefault();
+                                  const source = draggedFinishOrder;
+                                  if (!source || source.partId !== part.id) return;
+
+                                  const fromIndex = part.allowedFinishes?.indexOf(source.finish) ?? -1;
+                                  if (fromIndex < 0 || fromIndex === finishIndex) return;
+
+                                  setFormState((current) => ({
+                                    ...current,
+                                    colorParts: updatePartAtIndex(current.colorParts, index, (item) =>
+                                      moveFinishOption(item, fromIndex, finishIndex)
+                                    )
+                                  }));
+                                  setDraggedFinishOrder(null);
+                                }}
+                                onDragEnd={() => setDraggedFinishOrder(null)}
+                              >
+                                <span className="finish-order-grip" aria-hidden="true">
+                                  grip
+                                </span>
+                                <span className="finish-order-index">{finishIndex + 1}</span>
+                                <span>{productFinishLabels[finish]}</span>
+                              </button>
+                            ))}
+                          </div>
+                          <p className="fine-print">
+                            Drag finishes to control how they appear in the product Configuration
+                            panel.
+                          </p>
+                        </div>
+                      ) : null}
 
                       {part.allowedFinishes?.length ? (
                         <label className="setup-field finish-default-field">

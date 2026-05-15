@@ -157,12 +157,3 @@ export interface SelectedPartPantone {
   pantone: PantoneOption;
   selectedFinish?: ProductFinishOption;
 }
-
-export interface ValidatedMockupRequest {
-  productSlug: string;
-  logoPrintColor: string;
-  printingMethod: string;
-  removeBackground: boolean;
-  logoFile: File;
-  selectedPartPantones: SelectedPartPantone[];
-}

@@ -1329,7 +1329,7 @@ input[type="file"].input-shell::file-selector-button {
 .part-selection-card {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 16px;
   padding: 28px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -1339,7 +1339,8 @@ input[type="file"].input-shell::file-selector-button {
     border-color var(--motion-fast) ease,
     background-color var(--motion-fast) ease,
     box-shadow var(--motion-fast) ease,
-    opacity var(--motion-fast) ease;
+    opacity var(--motion-fast) ease,
+    transform 420ms cubic-bezier(0.19, 1, 0.22, 1);
 }
 
 .part-selection-card.is-focused {
@@ -1362,6 +1363,77 @@ input[type="file"].input-shell::file-selector-button {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-10, 10px);
+}
+
+.part-collapse-trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-10, 10px);
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.part-collapse-trigger:hover .part-collapse-state {
+  background: var(--color-powder);
+}
+
+.part-collapse-state {
+  align-self: start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  color: var(--color-gravel);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    transform 420ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.part-collapse-description {
+  display: block;
+  margin-top: 4px;
+}
+
+.part-selection-card.is-expanded .part-collapse-state {
+  color: var(--color-obsidian);
+}
+
+.part-selection-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.985);
+  transform-origin: 50% 0;
+  transition:
+    grid-template-rows 520ms cubic-bezier(0.19, 1, 0.22, 1),
+    opacity 240ms ease,
+    transform 520ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.part-selection-card.is-expanded .part-selection-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.part-selection-card.is-collapsed {
+  transform: scale(0.992);
+}
+
+.part-selection-body-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .part-selection-copy {
@@ -1410,8 +1482,81 @@ input[type="file"].input-shell::file-selector-button {
   margin-top: var(--spacing-12);
 }
 
+.finish-order-copy {
+  margin: 0;
+}
+
 .finish-default-field {
   margin-top: var(--spacing-12);
+}
+
+.finish-order-panel {
+  display: grid;
+  gap: var(--spacing-8);
+  margin-top: var(--spacing-12);
+}
+
+.finish-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+
+.finish-order-item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  box-shadow: var(--shadow-button);
+  color: var(--color-obsidian);
+  cursor: grab;
+  padding: 0 var(--spacing-12);
+  text-align: left;
+  transition:
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    opacity var(--motion-fast) ease,
+    transform 220ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.finish-order-item:hover {
+  background: var(--color-powder);
+  transform: translateY(-1px);
+}
+
+.finish-order-item:active {
+  cursor: grabbing;
+}
+
+.finish-order-item.is-dragging {
+  opacity: 0.52;
+  transform: scale(0.98);
+}
+
+.finish-order-grip {
+  color: var(--color-slate);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.finish-order-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: var(--color-obsidian);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .quick-color-button {
@@ -1564,6 +1709,13 @@ input[type="file"].input-shell::file-selector-button {
 
 .button-primary:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+
+.setup-required-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .button-primary:disabled {

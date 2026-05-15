@@ -58,16 +58,6 @@ function readValue(...candidates) {
 const exampleEnv = await readDotenvFile(envExamplePath);
 const localEnv = await readDotenvFile(envLocalPath);
 
-const geminiApiKey = readValue(
-  localEnv.get("GEMINI_API_KEY"),
-  localEnv.get("GOOGLE_API_KEY"),
-  localEnv.get("GOOGLE_GENAI_API_KEY")
-);
-
-if (!geminiApiKey) {
-  throw new Error("Missing GEMINI_API_KEY in .env.local. Add it locally before generating netlify.env.");
-}
-
 const appBaseUrl = readValue(localEnv.get("APP_BASE_URL"));
 const normalizedAppBaseUrl =
   appBaseUrl && !appBaseUrl.includes("localhost")
@@ -76,30 +66,14 @@ const normalizedAppBaseUrl =
 
 const netlifyEnv = [
   "# Generated from .env.local for Netlify import",
-  "# This file contains secrets. Keep it local and do not commit it.",
-  "",
-  "# AI provider mode",
-  `AI_STUB_MODE=${readValue(localEnv.get("AI_STUB_MODE"), exampleEnv.get("AI_STUB_MODE"), "false")}`,
-  "",
-  "# Gemini / Nano Banana",
-  `GEMINI_API_KEY=${geminiApiKey}`,
-  `GEMINI_IMAGE_MODEL=${readValue(localEnv.get("GEMINI_IMAGE_MODEL"), exampleEnv.get("GEMINI_IMAGE_MODEL"), "gemini-3.1-flash-image-preview")}`,
-  `GEMINI_IMAGE_ASPECT_RATIO=${readValue(localEnv.get("GEMINI_IMAGE_ASPECT_RATIO"), exampleEnv.get("GEMINI_IMAGE_ASPECT_RATIO"), "1:1")}`,
-  `GEMINI_IMAGE_SIZE=${readValue(localEnv.get("GEMINI_IMAGE_SIZE"), exampleEnv.get("GEMINI_IMAGE_SIZE"), "1K")}`,
-  `GEMINI_REQUEST_TIMEOUT_MS=${readValue(localEnv.get("GEMINI_REQUEST_TIMEOUT_MS"), exampleEnv.get("GEMINI_REQUEST_TIMEOUT_MS"), "300000")}`,
-  `GEMINI_CONTROL_REQUEST_TIMEOUT_MS=${readValue(localEnv.get("GEMINI_CONTROL_REQUEST_TIMEOUT_MS"), exampleEnv.get("GEMINI_CONTROL_REQUEST_TIMEOUT_MS"), "20000")}`,
-  `GEMINI_BATCH_POLL_INTERVAL_MS=${readValue(localEnv.get("GEMINI_BATCH_POLL_INTERVAL_MS"), exampleEnv.get("GEMINI_BATCH_POLL_INTERVAL_MS"), "5000")}`,
-  `GEMINI_BATCH_MAX_WAIT_MS=${readValue(localEnv.get("GEMINI_BATCH_MAX_WAIT_MS"), exampleEnv.get("GEMINI_BATCH_MAX_WAIT_MS"), "180000")}`,
+  "# Local layered rendering runs in the browser; no image-generation secret is required.",
   "",
   "# App",
   `APP_BASE_URL=${normalizedAppBaseUrl}`,
   "NODE_ENV=production",
   `NEXT_PUBLIC_SHOW_DEBUG=${readValue(localEnv.get("NEXT_PUBLIC_SHOW_DEBUG"), exampleEnv.get("NEXT_PUBLIC_SHOW_DEBUG"), "false")}`,
-  `NEXT_PUBLIC_GENERATE_ENDPOINT=${readValue(localEnv.get("NEXT_PUBLIC_GENERATE_ENDPOINT"), exampleEnv.get("NEXT_PUBLIC_GENERATE_ENDPOINT"), "https://your-cloud-run-url/generate-mockup")}`,
-  `NEXT_PUBLIC_GENERATE_TIMEOUT_MS=${readValue(localEnv.get("NEXT_PUBLIC_GENERATE_TIMEOUT_MS"), exampleEnv.get("NEXT_PUBLIC_GENERATE_TIMEOUT_MS"), "360000")}`,
   "",
-  "# Netlify should not rely on persistent filesystem writes for generated output.",
-  "OUTPUT_STORAGE_MODE=data_url",
+  "# Setup Studio save is local-only; Netlify branch deploys render from checked-in template assets.",
   `MAX_UPLOAD_SIZE_MB=${readValue(localEnv.get("MAX_UPLOAD_SIZE_MB"), exampleEnv.get("MAX_UPLOAD_SIZE_MB"), "4")}`,
   ""
 ].join("\n");

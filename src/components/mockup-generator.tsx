@@ -9,7 +9,7 @@ import {
   productFinishLabels,
   resolvePartFinishSelection
 } from "@/lib/services/finish-option.service";
-import { buildMockupPrompt, getPrintingMethodPrompt } from "@/lib/services/prompt.service";
+import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import type {
   ProductFinishOption,
   SelectedPartPantone,
@@ -23,13 +23,9 @@ interface GenerateResponse {
   jobName?: string;
   state?: string;
   completed?: boolean;
-  provider?: "stub" | "gemini" | "local-layered";
-  model?: string;
-  stubMode?: boolean;
+  provider?: "local-layered";
   debug?: {
     provider?: string;
-    model?: string;
-    stubMode?: boolean;
     templateId?: string;
     productSlug: string;
     selectedPartPantones?: Array<{
@@ -49,12 +45,6 @@ interface GenerateResponse {
   errorCode?: string;
 }
 
-interface LogoJsonPayload {
-  fileName: string;
-  mimeType: string;
-  data: string;
-}
-
 const logoPrintColorLabels: Record<string, string> = {
   white: "White",
   black: "Black",
@@ -62,26 +52,13 @@ const logoPrintColorLabels: Record<string, string> = {
   pantone_match: "Match selected Pantone"
 };
 
-const jobStatusFetchTimeoutMs = 30000;
-const parsedDirectGenerateTimeoutMs = Number.parseInt(
-  process.env.NEXT_PUBLIC_GENERATE_TIMEOUT_MS || "360000",
-  10
-);
-const directGenerateTimeoutMs = Number.isFinite(parsedDirectGenerateTimeoutMs)
-  ? Math.max(parsedDirectGenerateTimeoutMs, 60000)
-  : 360000;
-const localJobPollIntervalMs = 3000;
-const localJobMaxWaitMs = 15 * 60 * 1000;
 const maxClientLogoSizeBytes = 4 * 1024 * 1024;
 const maxPreviewRetryCount = 6;
 const fallbackLogoArea = { x: 0.34, y: 0.58, width: 0.32, height: 0.11 };
 const defaultLogoTransform = { offsetX: 0, offsetY: 0, scale: 1, rotation: 0 };
 const logoOffsetLimit = 0.35;
 const imageLoadCache = new Map<string, Promise<HTMLImageElement>>();
-const localNextApiGenerateEndpoint = "/api/mockup/generate";
-const netlifyFunctionGenerateEndpoint = "/.netlify/functions/generate-mockup";
 const logoQuarterTurnDegrees = 90;
-type GenerateRequestMode = "local-next-api" | "netlify-job" | "external-direct";
 
 type PixelRect = {
   x: number;
@@ -120,50 +97,6 @@ type LogoDragState = {
   imageHeight: number;
 };
 
-function getGenerateEndpoint() {
-  const configuredEndpoint = process.env.NEXT_PUBLIC_GENERATE_ENDPOINT?.trim();
-  if (configuredEndpoint) {
-    if (
-      process.env.NODE_ENV !== "development" &&
-      configuredEndpoint.startsWith("/api/")
-    ) {
-      return netlifyFunctionGenerateEndpoint;
-    }
-
-    return configuredEndpoint;
-  }
-
-  return process.env.NODE_ENV === "development"
-    ? localNextApiGenerateEndpoint
-    : netlifyFunctionGenerateEndpoint;
-}
-
-function getGenerateRequestMode(endpoint: string): GenerateRequestMode {
-  if (process.env.NODE_ENV === "development" && endpoint.startsWith("/api/")) {
-    return "local-next-api";
-  }
-
-  if (/^https?:\/\//i.test(endpoint)) {
-    return "external-direct";
-  }
-
-  return "netlify-job";
-}
-
-function getGenerateStartEndpoint(endpoint: string) {
-  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
-  return normalizedEndpoint.startsWith("/api/")
-    ? `${normalizedEndpoint}/start`
-    : `${normalizedEndpoint}-start`;
-}
-
-function getGenerateStatusEndpoint(endpoint: string) {
-  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
-  return normalizedEndpoint.startsWith("/api/")
-    ? `${normalizedEndpoint}/status`
-    : `${normalizedEndpoint}-status`;
-}
-
 function buildPreviewImageUrl(imageUrl: string, attempt: number) {
   if (imageUrl.startsWith("data:")) return imageUrl;
 
@@ -177,55 +110,6 @@ function toAbsoluteAssetUrl(assetUrl: string) {
   }
 
   return new URL(assetUrl, window.location.origin).toString();
-}
-
-async function fetchJsonWithTimeout<T>(
-  input: RequestInfo | URL,
-  init: RequestInit,
-  timeoutMs: number
-) {
-  const abortController = new AbortController();
-  const timeoutId = window.setTimeout(() => abortController.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(input, {
-      ...init,
-      signal: abortController.signal
-    });
-    const text = await response.text();
-    const requestTarget =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : "request";
-    let data = {} as T;
-
-    if (text) {
-      try {
-        data = JSON.parse(text) as T;
-      } catch {
-        const compactText = text.trim().replace(/\s+/g, " ").slice(0, 160);
-        const contentType = response.headers.get("content-type") || "unknown";
-        throw new Error(
-          compactText.startsWith("<")
-            ? `NON_JSON_RESPONSE: ${requestTarget} returned HTML instead of JSON (HTTP ${response.status}, content-type ${contentType}). This usually means the app hit the wrong generate endpoint.`
-            : `INVALID_JSON_RESPONSE: ${requestTarget} returned non-JSON content (HTTP ${response.status}, content-type ${contentType}). ${compactText}`
-        );
-      }
-    }
-
-    return { response, data };
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
-}
-
-function formatElapsedTime(ms: number) {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function getPartNumberText(label: string, fallbackIndex: number) {
@@ -813,6 +697,26 @@ function mixLinearColor(from: LinearRgb, to: LinearRgb, amount: number): LinearR
   };
 }
 
+function isNearWhiteTint(tint: Rgb) {
+  const maxChannel = Math.max(tint.r, tint.g, tint.b);
+  const minChannel = Math.min(tint.r, tint.g, tint.b);
+  return minChannel >= 238 && maxChannel - minChannel <= 18;
+}
+
+function getWhiteAlbedoLinear(tint: Rgb): LinearRgb {
+  const whiteBase = {
+    r: clamp(244 + (tint.r - 255) * 0.18, 232, 246),
+    g: clamp(243 + (tint.g - 255) * 0.18, 231, 245),
+    b: clamp(239 + (tint.b - 255) * 0.18, 228, 242)
+  };
+
+  return {
+    r: srgbChannelToLinear(whiteBase.r),
+    g: srgbChannelToLinear(whiteBase.g),
+    b: srgbChannelToLinear(whiteBase.b)
+  };
+}
+
 function smoothstep(edge0: number, edge1: number, value: number) {
   if (edge0 === edge1) return value < edge0 ? 0 : 1;
 
@@ -820,7 +724,7 @@ function smoothstep(edge0: number, edge1: number, value: number) {
   return t * t * (3 - 2 * t);
 }
 
-function getMaskAlpha(maskData: Uint8ClampedArray, index: number) {
+function getRedReferenceMaskAlpha(maskData: Uint8ClampedArray, index: number) {
   const r = maskData[index];
   const g = maskData[index + 1];
   const b = maskData[index + 2];
@@ -834,11 +738,30 @@ function getMaskAlpha(maskData: Uint8ClampedArray, index: number) {
   return Math.min(redStrength, dominanceStrength) * a;
 }
 
+function getInstructionColorMaskAlpha(
+  maskData: Uint8ClampedArray,
+  index: number,
+  targetColor: Rgb
+) {
+  const r = maskData[index];
+  const g = maskData[index + 1];
+  const b = maskData[index + 2];
+  const a = maskData[index + 3] / 255;
+  const distance = Math.hypot(r - targetColor.r, g - targetColor.g, b - targetColor.b);
+  const similarity = 1 - clamp((distance - 26) / 112, 0, 1);
+  const saturation = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+
+  if (similarity <= 0 || saturation < 0.08) return 0;
+
+  return smoothstep(0.24, 0.82, similarity) * smoothstep(0.08, 0.24, saturation) * a;
+}
+
 function createLayeredPartCanvas(params: {
   width: number;
   height: number;
   finishImage: HTMLImageElement;
   maskImage: HTMLImageElement;
+  maskTargetColor?: Rgb;
   tint: Rgb;
   colorOpacity: number;
   highlightProtection: number;
@@ -850,6 +773,7 @@ function createLayeredPartCanvas(params: {
     height,
     finishImage,
     maskImage,
+    maskTargetColor,
     tint,
     colorOpacity,
     highlightProtection,
@@ -880,6 +804,7 @@ function createLayeredPartCanvas(params: {
     g: srgbChannelToLinear(tint.g),
     b: srgbChannelToLinear(tint.b)
   };
+  const isWhiteTint = isNearWhiteTint(tint);
   const boostedTintLinear = boostLinearTintSaturation(tintLinear, saturationBoost);
   const tintLuminance = getRelativeLuminanceLinear(boostedTintLinear);
   const neutralAlbedo = {
@@ -887,31 +812,51 @@ function createLayeredPartCanvas(params: {
     g: tintLuminance,
     b: tintLuminance
   };
-  const albedoLinear = mixLinearColor(neutralAlbedo, boostedTintLinear, colorOpacity);
+  const albedoLinear = isWhiteTint
+    ? getWhiteAlbedoLinear(tint)
+    : mixLinearColor(neutralAlbedo, boostedTintLinear, colorOpacity);
   const albedoLuminance = getRelativeLuminanceLinear(albedoLinear);
-  const highlightStrength = clamp(0.05 + highlightProtection * 0.22, 0.04, 0.3);
+  const highlightStrength = isWhiteTint
+    ? clamp(0.015 + highlightProtection * 0.08, 0.015, 0.095)
+    : clamp(0.05 + highlightProtection * 0.22, 0.04, 0.3);
 
   // Treat Pantone as the surface albedo, then use the finish image only as luminance shading.
   const colorTransferTable = Array.from({ length: 256 }, (_, level) => {
     const sourceBrightness = level / 255;
-    const textureContrast = 1 + textureStrength * 1.4;
-    const tonalBrightness = clamp(0.68 + (sourceBrightness - 0.68) * textureContrast, 0, 1);
+    const textureContrast = isWhiteTint
+      ? 1 + (textureStrength + 0.12) * 2.25
+      : 1 + textureStrength * 1.4;
+    const tonalAnchor = isWhiteTint ? 0.6 : 0.68;
+    const tonalBrightness = clamp(
+      tonalAnchor + (sourceBrightness - tonalAnchor) * textureContrast,
+      0,
+      1
+    );
     const shadow = 1 - smoothstep(0.28, 0.68, tonalBrightness);
     const highlight = smoothstep(0.78, 0.98, sourceBrightness);
     const lightPantoneShadowGain = smoothstep(0.42, 0.72, albedoLuminance);
-    const shade = clamp(
-      0.46 +
-        Math.pow(tonalBrightness, 1.08) * 0.72 -
-        shadow * (0.06 + lightPantoneShadowGain * 0.1),
-      0.28,
-      1.16
-    );
+    const shade = isWhiteTint
+      ? clamp(
+          0.42 + Math.pow(tonalBrightness, 1.05) * 0.66 - shadow * 0.2,
+          0.36,
+          1.02
+        )
+      : clamp(
+          0.46 +
+            Math.pow(tonalBrightness, 1.08) * 0.72 -
+            shadow * (0.06 + lightPantoneShadowGain * 0.1),
+          0.28,
+          1.16
+        );
     const shadedAlbedo = {
       r: clamp(albedoLinear.r * shade, 0, 1),
       g: clamp(albedoLinear.g * shade, 0, 1),
       b: clamp(albedoLinear.b * shade, 0, 1)
     };
-    const specularAmount = Math.pow(highlight, 2.15) * highlightStrength * (1 - shadow * 0.7);
+    const specularAmount =
+      Math.pow(highlight, isWhiteTint ? 2.65 : 2.15) *
+      highlightStrength *
+      (1 - shadow * 0.7);
     const highlighted = mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
 
     return {
@@ -922,7 +867,9 @@ function createLayeredPartCanvas(params: {
   });
 
   for (let index = 0; index < outputData.data.length; index += 4) {
-    const maskAlpha = getMaskAlpha(maskData.data, index);
+    const maskAlpha = maskTargetColor
+      ? getInstructionColorMaskAlpha(maskData.data, index, maskTargetColor)
+      : getRedReferenceMaskAlpha(maskData.data, index);
     if (maskAlpha <= 0) continue;
 
     const sourceAlpha = finishData.data[index + 3] / 255;
@@ -949,18 +896,22 @@ async function renderLayeredProductMockup(params: {
   selectedPartPantones: SelectedPartPantone[];
 }) {
   const layeredRender = params.template.layeredRender;
-  if (!layeredRender?.enabled) {
-    throw new Error("LAYERED_RENDER_NOT_CONFIGURED: This template is not configured for local rendering.");
-  }
-
-  const finishEntries = Object.entries(layeredRender.finishBaseImages) as Array<
+  const finishBaseImages = layeredRender?.enabled
+    ? layeredRender.finishBaseImages
+    : ({ matte: params.template.baseImageUrl } satisfies Partial<Record<ProductFinishOption, string>>);
+  const fallbackFinish = layeredRender?.enabled ? layeredRender.fallbackFinish : "matte";
+  const finishEntries = Object.entries(finishBaseImages) as Array<
     [ProductFinishOption, string]
   >;
-  const fallbackFinishUrl = layeredRender.finishBaseImages[layeredRender.fallbackFinish];
+  const fallbackFinishUrl = finishBaseImages[fallbackFinish] || params.template.baseImageUrl;
   if (!fallbackFinishUrl) {
     throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish image is missing.");
   }
 
+  const partMaskEntries = Object.entries(layeredRender?.partMasks || {});
+  const needsInstructionMaskFallback = params.selectedPartPantones.some(
+    (selection) => !layeredRender?.partMasks?.[selection.partId]
+  );
   const [finishPairs, maskPairs] = await Promise.all([
     Promise.all(
       finishEntries.map(async ([finish, assetUrl]) => [
@@ -969,7 +920,7 @@ async function renderLayeredProductMockup(params: {
       ] as const)
     ),
     Promise.all(
-      Object.entries(layeredRender.partMasks).map(async ([partId, assetUrl]) => [
+      partMaskEntries.map(async ([partId, assetUrl]) => [
         partId,
         await loadImage(toAbsoluteAssetUrl(assetUrl))
       ] as const)
@@ -978,13 +929,16 @@ async function renderLayeredProductMockup(params: {
 
   const finishImages = Object.fromEntries(finishPairs) as LayeredRenderImages;
   const maskImages = Object.fromEntries(maskPairs) as Record<string, HTMLImageElement>;
-  const fallbackImage = finishImages[layeredRender.fallbackFinish];
+  const instructionMaskImage = needsInstructionMaskFallback
+    ? await loadImage(toAbsoluteAssetUrl(params.template.instructionImageUrl))
+    : null;
+  const fallbackImage = finishImages[fallbackFinish];
   if (!fallbackImage) {
     throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish image could not be loaded.");
   }
 
-  const width = layeredRender.outputSize?.width || fallbackImage.naturalWidth || fallbackImage.width;
-  const height = layeredRender.outputSize?.height || fallbackImage.naturalHeight || fallbackImage.height;
+  const width = layeredRender?.outputSize?.width || fallbackImage.naturalWidth || fallbackImage.width;
+  const height = layeredRender?.outputSize?.height || fallbackImage.naturalHeight || fallbackImage.height;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -992,17 +946,25 @@ async function renderLayeredProductMockup(params: {
   context.drawImage(fallbackImage, 0, 0, width, height);
 
   for (const selection of params.selectedPartPantones) {
-    const maskImage = maskImages[selection.partId];
+    const explicitMaskImage = maskImages[selection.partId];
+    const maskImage = explicitMaskImage || instructionMaskImage;
     if (!maskImage) continue;
 
-    const finish = selection.selectedFinish || layeredRender.fallbackFinish;
+    const maskTargetColor =
+      explicitMaskImage || !selection.instructionColorHex
+        ? undefined
+        : hexToRgb(selection.instructionColorHex);
+    if (!explicitMaskImage && !maskTargetColor) continue;
+
+    const finish = selection.selectedFinish || fallbackFinish;
     const finishImage = finishImages[finish] || fallbackImage;
-    const rule = layeredRender.finishRules?.[finish] || defaultLayeredFinishRule;
+    const rule = layeredRender?.finishRules?.[finish] || defaultLayeredFinishRule;
     const partCanvas = createLayeredPartCanvas({
       width,
       height,
       finishImage,
       maskImage,
+      maskTargetColor,
       tint: hexToRgb(selection.pantone.previewHex),
       colorOpacity: rule.colorOpacity,
       highlightProtection:
@@ -1063,6 +1025,9 @@ export default function MockupGenerator({
   const [isTemplateLoading, setIsTemplateLoading] = useState(!initialTemplate);
   const [pantoneFilter, setPantoneFilter] = useState("");
   const [openPartId, setOpenPartId] = useState<string | null>(null);
+  const [expandedPartId, setExpandedPartId] = useState<string | null>(
+    initialTemplate?.colorParts[0]?.id || null
+  );
   const [partPantones, setPartPantones] = useState<Record<string, string>>({});
   const [partFinishes, setPartFinishes] = useState<Record<string, ProductFinishOption>>({});
   const [logoPrintColor, setLogoPrintColor] = useState("");
@@ -1135,6 +1100,7 @@ export default function MockupGenerator({
       setIsTemplateLoading(false);
       setPantoneFilter("");
       setOpenPartId(null);
+      setExpandedPartId(initialTemplate.colorParts[0]?.id || null);
       setFocusedPartId(initialTemplate.colorParts[0]?.id || null);
       setPartPantones(
         Object.fromEntries(
@@ -1163,6 +1129,7 @@ export default function MockupGenerator({
     setTemplate(null);
     setTemplateError("This product has not been configured for mockup generation.");
     setIsTemplateLoading(false);
+    setExpandedPartId(null);
     setFocusedPartId(null);
     setPartFinishes({});
   }, [productSlug]);
@@ -1352,7 +1319,7 @@ export default function MockupGenerator({
   useEffect(() => {
     let isCancelled = false;
 
-    if (!template?.layeredRender?.enabled || template.layeredRender.mode !== "local-layered") {
+    if (!template) {
       return;
     }
 
@@ -1500,12 +1467,10 @@ export default function MockupGenerator({
     ? getPrintingMethodPrompt(printingMethod).label
     : "Not selected";
 
-  const isLayeredTemplate = Boolean(
-    template?.layeredRender?.enabled && template.layeredRender.mode === "local-layered"
-  );
+  const isLayeredTemplate = Boolean(template);
   const canGenerate =
     Boolean(template) &&
-    !isLayeredTemplate &&
+    isLayeredTemplate &&
     hasAllPartPantones &&
     Boolean(logoPrintColor) &&
     Boolean(printingMethod) &&
@@ -1569,7 +1534,7 @@ export default function MockupGenerator({
     : [
         { kicker: "Step 1", label: "Colours" },
         { kicker: "Step 2", label: "Branding" },
-        { kicker: "Step 3", label: "Generate" },
+        { kicker: "Step 3", label: "Setup" },
         { kicker: "Step 4", label: "Adjust" }
       ];
   const logoAdjustSectionIndex = isLayeredTemplate ? 2 : 3;
@@ -1600,6 +1565,14 @@ export default function MockupGenerator({
     const section = formSectionRefs.current[index];
     if (!section) return;
     section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function toggleExpandedPart(partId: string) {
+    setFocusedPartId(partId);
+    setExpandedPartId((current) => (current === partId ? null : partId));
+    setOpenPartId((current) =>
+      expandedPartId === partId && current === partId ? null : current
+    );
   }
 
   function handleLogoPointerDown(event: React.PointerEvent<HTMLImageElement>) {
@@ -1651,11 +1624,7 @@ export default function MockupGenerator({
     clearPreviewRetryTimeout();
     setIsSubmitting(true);
     setSubmitError(null);
-    setGenerationStatus(
-      template.layeredRender?.enabled
-        ? "Rendering layered BND62 preview..."
-        : "Preparing Gemini generation..."
-    );
+    setGenerationStatus("Rendering local layered mockup...");
     setCompositedPreviewUrl(null);
     setLogoTransform(createDefaultLogoTransform());
     setIsLogoDragging(false);
@@ -1664,222 +1633,37 @@ export default function MockupGenerator({
     try {
       const selectedPartPantones = buildSelectedPartPantones(template, partPantones, partFinishes);
 
-      if (template.layeredRender?.enabled && template.layeredRender.mode === "local-layered") {
-        const imageUrl = await renderLayeredProductMockup({
-          template,
-          selectedPartPantones
-        });
+      const imageUrl = await renderLayeredProductMockup({
+        template,
+        selectedPartPantones
+      });
 
-        setResult({
-          success: true,
-          imageUrl,
+      setResult({
+        success: true,
+        imageUrl,
+        provider: "local-layered",
+        completed: true,
+        state: "completed",
+        debug: {
           provider: "local-layered",
-          completed: true,
-          state: "completed",
-          debug: {
-            provider: "local-layered",
-            templateId: template.id,
-            productSlug,
-            selectedPartPantones: selectedPartPantones.map((selection) => ({
-              partId: selection.partId,
-              partLabel: selection.partLabel,
-              pantoneCode: selection.pantoneCode,
-              selectedFinish: selection.selectedFinish
-            })),
-            baseProductImagePath: template.baseImageUrl,
-            instructionImagePath: template.instructionImageUrl,
-            logoFileName: logoFile.name,
-            promptUsed: "Local BND62 layered renderer"
-          }
-        });
-        setGenerationStatus(null);
-        return;
-      }
-
-      const endpoint = getGenerateEndpoint();
-      const requestMode = getGenerateRequestMode(endpoint);
-      const startEndpoint = getGenerateStartEndpoint(endpoint);
-      const statusEndpoint = getGenerateStatusEndpoint(endpoint);
-
-      if (requestMode === "local-next-api") {
-        const formData = makeGenerateFormData({
+          templateId: template.id,
           productSlug,
-          partPantones,
-          partFinishes,
-          logoPrintColor,
-          printingMethod,
-          logoFile
-        });
-        const startResult = await fetchJsonWithTimeout<GenerateResponse>(
-          startEndpoint,
-          {
-            method: "POST",
-            body: formData
-          },
-          directGenerateTimeoutMs
-        );
-        const startData = startResult.data;
-
-        if (!startResult.response.ok || !startData.success || !startData.imageUrl) {
-          throw new Error(
-            startData.errorCode
-              ? `${startData.errorCode}: ${startData.error}`
-              : startData.error || "Generation failed."
-          );
+          selectedPartPantones: selectedPartPantones.map((selection) => ({
+            partId: selection.partId,
+            partLabel: selection.partLabel,
+            pantoneCode: selection.pantoneCode,
+            selectedFinish: selection.selectedFinish
+          })),
+          baseProductImagePath: template.baseImageUrl,
+          instructionImagePath: template.instructionImageUrl,
+          logoFileName: logoFile.name,
+          promptUsed: "Local layered renderer"
         }
-
-        if (startData.provider !== "gemini" || startData.stubMode) {
-          throw new Error("REAL_AI_REQUIRED: The API did not return a real Gemini image.");
-        }
-
-        setResult(startData);
-        setGenerationStatus(null);
-        return;
-      }
-
-      if (requestMode === "external-direct") {
-        setGenerationStatus("Generating mockup with Gemini...");
-        const directResult = await fetchJsonWithTimeout<GenerateResponse>(
-          endpoint,
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json"
-            },
-            body: JSON.stringify({
-              productSlug,
-              prompt: buildMockupPrompt({
-                template,
-                selectedPartPantones,
-                logoPrintColor,
-                printingMethod
-              }),
-              baseProductImageUrl: toAbsoluteAssetUrl(template.baseImageUrl),
-              instructionImageUrl: toAbsoluteAssetUrl(template.instructionImageUrl),
-              partMaskImageUrls: selectedPartPantones
-                .map((selection) => selection.partMaskImageUrl)
-                .filter(Boolean)
-                .map((assetUrl) => toAbsoluteAssetUrl(assetUrl as string))
-            })
-          },
-          directGenerateTimeoutMs
-        );
-        const directData = directResult.data;
-
-        if (!directResult.response.ok || !directData.success || !directData.imageUrl) {
-          throw new Error(
-            directData.errorCode
-              ? `${directData.errorCode}: ${directData.error}`
-              : directData.error || "Generation failed."
-          );
-        }
-
-        if (directData.provider !== "gemini" || directData.stubMode) {
-          throw new Error("REAL_AI_REQUIRED: The API did not return a real Gemini image.");
-        }
-
-        setResult(directData);
-        setGenerationStatus(null);
-        return;
-      }
-
-      const startResult = await fetchJsonWithTimeout<GenerateResponse>(
-        startEndpoint,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json"
-          },
-          body: JSON.stringify({
-            productSlug,
-            partPantones,
-            partFinishes,
-            logoPrintColor,
-            printingMethod,
-            removeBackground: false,
-            logoFile: await fileToLogoJsonPayload(logoFile)
-          })
-        },
-        jobStatusFetchTimeoutMs
-      );
-      const startData = startResult.data;
-
-      if (!startResult.response.ok || !startData.success || !startData.jobName) {
-        throw new Error(
-          startData.errorCode
-            ? `${startData.errorCode}: ${startData.error}`
-            : startData.error || "Generation job failed to start."
-        );
-      }
-
-      const startedAt = Date.now();
-      let finalData: GenerateResponse | null = null;
-
-      while (Date.now() - startedAt <= localJobMaxWaitMs) {
-        const elapsedMs = Date.now() - startedAt;
-        setGenerationStatus(
-          `Gemini job ${startData.state || "queued"}... ${formatElapsedTime(elapsedMs)}`
-        );
-        await new Promise((resolve) => window.setTimeout(resolve, localJobPollIntervalMs));
-
-        const statusResult = await fetchJsonWithTimeout<GenerateResponse>(
-          statusEndpoint,
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json"
-            },
-            body: JSON.stringify({
-              productSlug,
-              jobName: startData.jobName
-            })
-          },
-          jobStatusFetchTimeoutMs
-        );
-        const statusData = statusResult.data;
-
-        if (!statusResult.response.ok || !statusData.success) {
-          throw new Error(
-            statusData.errorCode
-              ? `${statusData.errorCode}: ${statusData.error}`
-              : statusData.error || "Generation status check failed."
-          );
-        }
-
-        startData.state = statusData.state || startData.state;
-        setGenerationStatus(
-          `Gemini job ${statusData.state || "running"}... ${formatElapsedTime(elapsedMs)}`
-        );
-
-        if (statusData.completed && statusData.imageUrl) {
-          finalData = statusData;
-          break;
-        }
-      }
-
-      if (!finalData?.imageUrl) {
-        throw new Error(
-          "AI_GENERATION_TIMEOUT: Gemini is still processing this job after 15 minutes. Please try again later."
-        );
-      }
-
-      if (finalData.provider !== "gemini" || finalData.stubMode) {
-        throw new Error("REAL_AI_REQUIRED: The API did not return a real Gemini image.");
-      }
-
-      setResult(finalData);
+      });
       setGenerationStatus(null);
     } catch (error) {
       setGenerationStatus(null);
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setSubmitError(
-          `AI_GENERATION_TIMEOUT: Gemini did not return a result within ${Math.round(
-            directGenerateTimeoutMs / 1000
-          )} seconds. Please try again later.`
-        );
-      } else {
-        setSubmitError(error instanceof Error ? error.message : "Generation failed.");
-      }
+      setSubmitError(error instanceof Error ? error.message : "Local render failed.");
     } finally {
       setIsSubmitting(false);
     }
@@ -1916,7 +1700,7 @@ export default function MockupGenerator({
             <Link href="/setup" className="secondary-link-button">
               Setup studio
             </Link>
-            <span className="mode-pill">AI mockup studio</span>
+            <span className="mode-pill">Local layered studio</span>
           </div>
         </div>
       </header>
@@ -2043,7 +1827,7 @@ export default function MockupGenerator({
                           <p className="logo-adjust-title">Logo position adjustment</p>
                           <p className="fine-print">
                             Drag the preview, or fine-tune the logo with the controls below. This
-                            does not regenerate the AI image.
+                            does not rebuild the color layer.
                           </p>
                         </div>
                       </div>
@@ -2184,12 +1968,12 @@ export default function MockupGenerator({
                 <div>
                   <p className="panel-kicker">Configuration</p>
                   <h2 className="section-title">
-                    {isLayeredTemplate ? "Configure live mockup" : "Generate mockup"}
+                    {isLayeredTemplate ? "Configure live mockup" : "Local renderer setup needed"}
                   </h2>
                   <p className="panel-description">
                     {isLayeredTemplate
                       ? "Adjust colours, material finish, and logo treatment while the preview updates on the canvas."
-                      : "Build the request from top to bottom, then generate the preview when every required input is ready."}
+                      : "This product needs material base images and part references before it can use the local layered renderer."}
                   </p>
                 </div>
                 <div className="config-status-block">
@@ -2202,7 +1986,7 @@ export default function MockupGenerator({
                       ? "Live preview active"
                       : canGenerate
                         ? "Ready to generate"
-                        : "Configuration in progress"}
+                        : "Setup required"}
                   </span>
                   <p className="config-progress-copy">
                     {workflowCompletedSteps} of {workflowTotalSteps} required selections completed.
@@ -2262,27 +2046,41 @@ export default function MockupGenerator({
                       const partNumber = getPartNumberText(part.label, Math.max(partIndex, 0));
                       const isFocusedPart = activePartId === part.id;
                       const isMutedPart = Boolean(activePartId) && !isFocusedPart;
+                      const isExpandedPart = expandedPartId === part.id;
 
                       return (
                         <div
                           key={part.id}
-                          className={`part-selection-card${isFocusedPart ? " is-focused" : ""}${isMutedPart ? " is-muted" : ""}`}
+                          className={`part-selection-card${isFocusedPart ? " is-focused" : ""}${isMutedPart ? " is-muted" : ""}${isExpandedPart ? " is-expanded" : " is-collapsed"}`}
                           onClick={() => setFocusedPartId(part.id)}
                           onPointerEnter={() => setFocusedPartId(part.id)}
                           onFocusCapture={() => setFocusedPartId(part.id)}
                         >
                           <div className="part-selection-head">
-                            <div className="part-selection-copy">
+                            <button
+                              type="button"
+                              className="part-collapse-trigger"
+                              aria-expanded={isExpandedPart}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleExpandedPart(part.id);
+                              }}
+                            >
                               <div className="part-selection-title-row">
                                 <span className="part-index-badge" aria-hidden="true">
                                   {partNumber}
                                 </span>
-                                <label className="control-label" htmlFor={`part-${part.id}`}>
+                                <span className="control-label">
                                   {part.label} Pantone color
-                                </label>
+                                </span>
                               </div>
-                              <p className="fine-print">{part.description}</p>
-                            </div>
+                              <span className="fine-print part-collapse-description">
+                                {part.description}
+                              </span>
+                              <span className="part-collapse-state">
+                                {isExpandedPart ? "Shrink" : "Open"}
+                              </span>
+                            </button>
                             <button
                               id={`part-${part.id}`}
                               type="button"
@@ -2291,6 +2089,7 @@ export default function MockupGenerator({
                               aria-expanded={openPartId === part.id}
                               onClick={() => {
                                 setFocusedPartId(part.id);
+                                setExpandedPartId(part.id);
                                 setOpenPartId((current) => (current === part.id ? null : part.id));
                               }}
                             >
@@ -2309,84 +2108,20 @@ export default function MockupGenerator({
                             </button>
                           </div>
 
-                          <div className="quick-color-row">
-                            {quickColorOptions.map((option) => (
-                              <button
-                                key={`${part.id}-${option.code}`}
-                                type="button"
-                                className={`quick-color-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
-                                onClick={() => {
-                                  setFocusedPartId(part.id);
-                                  setPartPantones((current) => ({
-                                    ...current,
-                                    [part.id]: option.code
-                                  }));
-                                }}
-                              >
-                                <span
-                                  className="color-swatch"
-                                  style={{ backgroundColor: option.previewHex }}
-                                  aria-hidden="true"
-                                />
-                                <span>{option.label}</span>
-                              </button>
-                            ))}
-                          </div>
-
-                          {selectedPantone ? (
-                            <div className="color-preview">
-                              <span
-                                className="color-swatch"
-                                style={{ backgroundColor: selectedPantone.previewHex }}
-                                aria-hidden="true"
-                              />
-                              <span>{selectedPantone.previewHex}</span>
-                            </div>
-                          ) : null}
-
-                          {part.allowedFinishes?.length ? (
-                            <div className="part-finish-field">
-                              <span className="control-label">Material finish</span>
-                              <div className="quick-choice-row" aria-label={`${part.label} finish options`}>
-                                {part.allowedFinishes.map((finish) => (
-                                  <button
-                                    key={`${part.id}-${finish}`}
-                                    type="button"
-                                    className={`quick-choice-button${selectedFinish === finish ? " is-active" : ""}`}
-                                    onClick={() => {
-                                      setFocusedPartId(part.id);
-                                      setPartFinishes((current) => ({
-                                        ...current,
-                                        [part.id]: finish
-                                      }));
-                                    }}
-                                  >
-                                    {productFinishLabels[finish]}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-
-                          {openPartId === part.id ? (
-                            <div className="pantone-options-shell">
-                              <div
-                                className="pantone-options-list"
-                                role="listbox"
-                                aria-label={part.label}
-                              >
-                                {visiblePantoneOptions.map((option) => (
+                          <div className="part-selection-body">
+                            <div className="part-selection-body-inner">
+                              <div className="quick-color-row">
+                                {quickColorOptions.map((option) => (
                                   <button
                                     key={`${part.id}-${option.code}`}
                                     type="button"
-                                    className={`pantone-option-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
+                                    className={`quick-color-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
                                     onClick={() => {
                                       setFocusedPartId(part.id);
                                       setPartPantones((current) => ({
                                         ...current,
                                         [part.id]: option.code
                                       }));
-                                      setOpenPartId(null);
                                     }}
                                   >
                                     <span
@@ -2394,13 +2129,97 @@ export default function MockupGenerator({
                                       style={{ backgroundColor: option.previewHex }}
                                       aria-hidden="true"
                                     />
-                                    <span className="pantone-option-label">{option.label}</span>
-                                    <span className="pantone-option-meta">{option.previewHex}</span>
+                                    <span>{option.label}</span>
                                   </button>
                                 ))}
                               </div>
+
+                              {selectedPantone ? (
+                                <div className="color-preview">
+                                  <span
+                                    className="color-swatch"
+                                    style={{ backgroundColor: selectedPantone.previewHex }}
+                                    aria-hidden="true"
+                                  />
+                                  <span>{selectedPantone.previewHex}</span>
+                                </div>
+                              ) : null}
+
+                              {part.allowedFinishes?.length ? (
+                                <div className="part-finish-field">
+                                  <span className="control-label">Material finish</span>
+                                  <p className="fine-print finish-order-copy">
+                                    Display order:{" "}
+                                    {part.allowedFinishes
+                                      .map(
+                                        (finish, finishIndex) =>
+                                          `${finishIndex + 1}. ${productFinishLabels[finish]}`
+                                      )
+                                      .join(" / ")}
+                                  </p>
+                                  <div
+                                    className="quick-choice-row"
+                                    aria-label={`${part.label} finish options`}
+                                  >
+                                    {part.allowedFinishes.map((finish) => (
+                                      <button
+                                        key={`${part.id}-${finish}`}
+                                        type="button"
+                                        className={`quick-choice-button${selectedFinish === finish ? " is-active" : ""}`}
+                                        onClick={() => {
+                                          setFocusedPartId(part.id);
+                                          setPartFinishes((current) => ({
+                                            ...current,
+                                            [part.id]: finish
+                                          }));
+                                        }}
+                                      >
+                                        {productFinishLabels[finish]}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {openPartId === part.id ? (
+                                <div className="pantone-options-shell">
+                                  <div
+                                    className="pantone-options-list"
+                                    role="listbox"
+                                    aria-label={part.label}
+                                  >
+                                    {visiblePantoneOptions.map((option) => (
+                                      <button
+                                        key={`${part.id}-${option.code}`}
+                                        type="button"
+                                        className={`pantone-option-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
+                                        onClick={() => {
+                                          setFocusedPartId(part.id);
+                                          setPartPantones((current) => ({
+                                            ...current,
+                                            [part.id]: option.code
+                                          }));
+                                          setOpenPartId(null);
+                                        }}
+                                      >
+                                        <span
+                                          className="color-swatch"
+                                          style={{ backgroundColor: option.previewHex }}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="pantone-option-label">
+                                          {option.label}
+                                        </span>
+                                        <span className="pantone-option-meta">
+                                          {option.previewHex}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
-                          ) : null}
+                          </div>
                         </div>
                       );
                     })}
@@ -2526,10 +2345,10 @@ export default function MockupGenerator({
                     <div className="form-section-head">
                       <div>
                         <p className="panel-kicker">Step 3</p>
-                        <h3 className="section-title">Generate output</h3>
+                        <h3 className="section-title">Enable local layered rendering</h3>
                       </div>
                       <p className="section-caption">
-                        Review the checklist below, then create or refresh the preview.
+                        Upload material base images and part reference masks in Setup Studio.
                       </p>
                     </div>
 
@@ -2548,9 +2367,9 @@ export default function MockupGenerator({
                       </div>
                     </div>
 
-                    <button className="button-primary" type="submit" disabled={!canGenerate}>
-                      {isSubmitting ? "Generating..." : "Generate mockup"}
-                    </button>
+                    <Link href="/setup" className="button-primary setup-required-link">
+                      Open setup studio
+                    </Link>
                   </section>
                 ) : null}
 
@@ -2580,7 +2399,7 @@ export default function MockupGenerator({
                           <p className="logo-adjust-title">Logo position adjustment</p>
                           <p className="fine-print">
                             Drag the preview image on the left, or fine-tune the logo with the
-                            controls below. This does not regenerate the AI image.
+                            controls below. This does not rebuild the color layer.
                           </p>
                         </div>
                       </div>
@@ -2719,8 +2538,6 @@ export default function MockupGenerator({
                 <summary className="debug-summary">Development debug</summary>
                 <dl className="debug-grid">
                   <DebugRow label="provider" value={result.provider || result.debug?.provider} />
-                  <DebugRow label="model" value={result.model || result.debug?.model} />
-                  <DebugRow label="stubMode" value={result.stubMode ?? result.debug?.stubMode} />
                   <DebugRow label="productSlug" value={result.debug?.productSlug} />
                   <DebugRow label="templateId" value={result.debug?.templateId} />
                   <DebugRow
@@ -2822,40 +2639,4 @@ export default function MockupGenerator({
       ) : null}
     </main>
   );
-}
-
-function makeGenerateFormData(params: {
-  productSlug: string;
-  partPantones: Record<string, string>;
-  partFinishes: Record<string, ProductFinishOption>;
-  logoPrintColor: string;
-  printingMethod: string;
-  logoFile: File;
-}) {
-  const formData = new FormData();
-  formData.append("productSlug", params.productSlug);
-  formData.append("partPantones", JSON.stringify(params.partPantones));
-  formData.append("partFinishes", JSON.stringify(params.partFinishes));
-  formData.append("logoPrintColor", params.logoPrintColor);
-  formData.append("printingMethod", params.printingMethod);
-  formData.append("removeBackground", "false");
-  formData.append("logoFile", params.logoFile);
-  return formData;
-}
-
-async function fileToLogoJsonPayload(file: File): Promise<LogoJsonPayload> {
-  const buffer = await file.arrayBuffer();
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-
-  return {
-    fileName: file.name,
-    mimeType: file.type,
-    data: btoa(binary)
-  };
 }
