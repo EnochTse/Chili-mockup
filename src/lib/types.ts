@@ -9,7 +9,7 @@ export interface ProductSpecification {
   value: string;
 }
 
-export type ProductFinishOption = "matte" | "glossy" | "rubber" | "metallic";
+export type ProductFinishOption = "matte" | "glossy" | "rubber" | "metallic" | "chrome";
 export type LogoOrientationPreset = "horizontal" | "vertical";
 
 export interface LayeredRenderFinishRule {

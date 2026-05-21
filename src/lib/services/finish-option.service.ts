@@ -4,14 +4,16 @@ export const productFinishOptions = [
   "matte",
   "glossy",
   "rubber",
-  "metallic"
+  "metallic",
+  "chrome"
 ] as const satisfies readonly ProductFinishOption[];
 
 export const productFinishLabels: Record<ProductFinishOption, string> = {
   matte: "Matte",
   glossy: "Glossy",
   rubber: "Rubber",
-  metallic: "Metallic"
+  metallic: "Metallic",
+  chrome: "Chrome"
 };
 
 type PartFinishConfig = {

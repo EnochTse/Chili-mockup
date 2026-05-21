@@ -114,7 +114,8 @@ describe("template.service", () => {
       finishBaseImages: {
         matte: "/mockup-templates/bnd62/layered/BND62_Matt.png",
         glossy: "/mockup-templates/bnd62/layered/BND62_Glossy.png",
-        rubber: "/mockup-templates/bnd62/layered/BND62_Rubber.png"
+        rubber: "/mockup-templates/bnd62/layered/BND62_Rubber.png",
+        chrome: "/mockup-templates/bnd62/layered/BND62_Chrome.png"
       },
       partMasks: {
         "part-1-nan6hb": "/mockup-templates/bnd62/layered/BND62_part_1.png",
@@ -139,13 +140,19 @@ describe("template.service", () => {
           highlightProtection: 0.2,
           textureStrength: 0.18,
           saturationBoost: 0.06
+        },
+        chrome: {
+          colorOpacity: 0.16,
+          highlightProtection: 0.72,
+          textureStrength: 0.34,
+          saturationBoost: 0
         }
       }
     });
     expect(template.colorParts.map((part) => part.allowedFinishes)).toEqual([
-      ["matte", "glossy", "rubber"],
-      ["matte", "glossy", "rubber"],
-      ["matte", "glossy", "rubber"]
+      ["matte", "glossy", "rubber", "chrome"],
+      ["matte", "glossy", "rubber", "chrome"],
+      ["matte", "glossy", "rubber", "chrome"]
     ]);
   });
 });

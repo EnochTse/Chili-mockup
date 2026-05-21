@@ -37,7 +37,8 @@
       "allowedFinishes": [
         "matte",
         "glossy",
-        "rubber"
+        "rubber",
+        "chrome"
       ],
       "defaultFinish": "matte",
       "indicatorAnchors": [
@@ -67,7 +68,8 @@
       "allowedFinishes": [
         "matte",
         "glossy",
-        "rubber"
+        "rubber",
+        "chrome"
       ],
       "defaultFinish": "glossy",
       "indicatorAnchors": [
@@ -89,7 +91,8 @@
       "allowedFinishes": [
         "matte",
         "glossy",
-        "rubber"
+        "rubber",
+        "chrome"
       ],
       "defaultFinish": "glossy",
       "indicatorAnchors": [
@@ -114,7 +117,8 @@
     "finishBaseImages": {
       "matte": "layered/BND62_Matt.png",
       "glossy": "layered/BND62_Glossy.png",
-      "rubber": "layered/BND62_Rubber.png"
+      "rubber": "layered/BND62_Rubber.png",
+      "chrome": "layered/BND62_Chrome.png"
     },
     "partMasks": {
       "part-1-nan6hb": "layered/BND62_part_1.png",
@@ -142,6 +146,13 @@
         "highlightProtection": 0.2,
         "textureStrength": 0.18,
         "saturationBoost": 0.06
+      },
+      "chrome": {
+        "colorOpacity": 0.16,
+        "blendMode": "source-over",
+        "highlightProtection": 0.72,
+        "textureStrength": 0.34,
+        "saturationBoost": 0
       }
     }
   },

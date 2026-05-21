@@ -116,9 +116,37 @@ function toAbsoluteAssetUrl(assetUrl: string) {
   return new URL(assetUrl, window.location.origin).toString();
 }
 
+function getRenderableFinishBaseImages(template: TemplatePublicDto) {
+  return template.layeredRender?.enabled
+    ? template.layeredRender.finishBaseImages
+    : ({ matte: template.baseImageUrl } satisfies Partial<Record<ProductFinishOption, string>>);
+}
+
+function getRenderablePartFinishes(
+  template: TemplatePublicDto,
+  part: TemplatePublicDto["colorParts"][number]
+) {
+  const finishBaseImages = getRenderableFinishBaseImages(template);
+  return (part.allowedFinishes || []).filter((finish) => Boolean(finishBaseImages[finish]));
+}
+
 function getPartNumberText(label: string, fallbackIndex: number) {
   const match = label.match(/\d+/);
   return match?.[0] || `${fallbackIndex + 1}`;
+}
+
+function resolveRenderablePartFinishSelection(
+  template: TemplatePublicDto,
+  part: TemplatePublicDto["colorParts"][number],
+  selectedValue: unknown
+) {
+  const renderableFinishes = getRenderablePartFinishes(template, part);
+  if (!renderableFinishes.length) return undefined;
+
+  return resolvePartFinishSelection(
+    { ...part, allowedFinishes: renderableFinishes },
+    selectedValue
+  );
 }
 
 function buildSelectedPartPantones(
@@ -142,7 +170,7 @@ function buildSelectedPartPantones(
       partMaskImageUrl: part.partMaskImageUrl,
       pantoneCode,
       pantone,
-      selectedFinish: resolvePartFinishSelection(part, partFinishes[part.id])
+      selectedFinish: resolveRenderablePartFinishSelection(template, part, partFinishes[part.id])
     };
   });
 }
@@ -150,7 +178,7 @@ function buildSelectedPartPantones(
 function buildInitialPartFinishes(template: TemplatePublicDto) {
   return Object.fromEntries(
     template.colorParts.flatMap((part) => {
-      const selectedFinish = resolvePartFinishSelection(part, part.defaultFinish);
+      const selectedFinish = resolveRenderablePartFinishSelection(template, part, part.defaultFinish);
       return selectedFinish ? [[part.id, selectedFinish]] : [];
     })
   ) as Record<string, ProductFinishOption>;
@@ -920,9 +948,9 @@ function isNearWhiteTint(tint: Rgb) {
 
 function getWhiteAlbedoLinear(tint: Rgb): LinearRgb {
   const whiteBase = {
-    r: clamp(244 + (tint.r - 255) * 0.18, 232, 246),
-    g: clamp(243 + (tint.g - 255) * 0.18, 231, 245),
-    b: clamp(239 + (tint.b - 255) * 0.18, 228, 242)
+    r: clamp(230 + (tint.r - 255) * 0.14, 218, 234),
+    g: clamp(229 + (tint.g - 255) * 0.14, 217, 233),
+    b: clamp(225 + (tint.b - 255) * 0.14, 214, 230)
   };
 
   return {
@@ -974,6 +1002,7 @@ function getInstructionColorMaskAlpha(
 function createLayeredPartCanvas(params: {
   width: number;
   height: number;
+  finish: ProductFinishOption;
   finishImage: HTMLImageElement;
   maskImage: HTMLImageElement;
   maskTargetColor?: Rgb;
@@ -986,6 +1015,7 @@ function createLayeredPartCanvas(params: {
   const {
     width,
     height,
+    finish,
     finishImage,
     maskImage,
     maskTargetColor,
@@ -1014,6 +1044,8 @@ function createLayeredPartCanvas(params: {
   outputCanvas.height = height;
   const outputContext = getCanvasContext(outputCanvas);
   const outputData = outputContext.createImageData(width, height);
+  const isChromeFinish = finish === "chrome";
+  const isGlossyFinish = finish === "glossy";
   const tintLinear = {
     r: srgbChannelToLinear(tint.r),
     g: srgbChannelToLinear(tint.g),
@@ -1032,16 +1064,19 @@ function createLayeredPartCanvas(params: {
     : mixLinearColor(neutralAlbedo, boostedTintLinear, colorOpacity);
   const albedoLuminance = getRelativeLuminanceLinear(albedoLinear);
   const highlightStrength = isWhiteTint
-    ? clamp(0.015 + highlightProtection * 0.08, 0.015, 0.095)
-    : clamp(0.05 + highlightProtection * 0.22, 0.04, 0.3);
+    ? clamp(0.012 + highlightProtection * 0.052, 0.012, 0.064)
+    : isGlossyFinish
+      ? clamp(0.11 + highlightProtection * 0.34, 0.12, 0.42)
+      : clamp(0.05 + highlightProtection * 0.22, 0.04, 0.3);
 
   // Treat Pantone as the surface albedo, then use the finish image only as luminance shading.
   const colorTransferTable = Array.from({ length: 256 }, (_, level) => {
     const sourceBrightness = level / 255;
+    const finishTextureStrength = isGlossyFinish ? textureStrength * 0.42 : textureStrength;
     const textureContrast = isWhiteTint
-      ? 1 + (textureStrength + 0.12) * 2.25
-      : 1 + textureStrength * 1.4;
-    const tonalAnchor = isWhiteTint ? 0.6 : 0.68;
+      ? 1 + (textureStrength + 0.08) * 1.9
+      : 1 + finishTextureStrength * 1.4;
+    const tonalAnchor = isWhiteTint ? 0.58 : isGlossyFinish ? 0.62 : 0.68;
     const tonalBrightness = clamp(
       tonalAnchor + (sourceBrightness - tonalAnchor) * textureContrast,
       0,
@@ -1052,10 +1087,18 @@ function createLayeredPartCanvas(params: {
     const lightPantoneShadowGain = smoothstep(0.42, 0.72, albedoLuminance);
     const shade = isWhiteTint
       ? clamp(
-          0.42 + Math.pow(tonalBrightness, 1.05) * 0.66 - shadow * 0.2,
-          0.36,
-          1.02
+          0.5 + Math.pow(tonalBrightness, 1.12) * 0.45 - shadow * 0.16,
+          0.4,
+          0.94
         )
+      : isGlossyFinish
+        ? clamp(
+            0.5 +
+              Math.pow(tonalBrightness, 1.02) * 0.82 -
+              shadow * (0.035 + lightPantoneShadowGain * 0.06),
+            0.34,
+            1.2
+          )
       : clamp(
           0.46 +
             Math.pow(tonalBrightness, 1.08) * 0.72 -
@@ -1069,9 +1112,12 @@ function createLayeredPartCanvas(params: {
       b: clamp(albedoLinear.b * shade, 0, 1)
     };
     const specularAmount =
-      Math.pow(highlight, isWhiteTint ? 2.65 : 2.15) *
-      highlightStrength *
-      (1 - shadow * 0.7);
+      (Math.pow(highlight, isWhiteTint ? 2.8 : isGlossyFinish ? 1.45 : 2.15) *
+        highlightStrength *
+        (1 - shadow * 0.7)) +
+      (isGlossyFinish
+        ? smoothstep(0.5, 0.9, sourceBrightness) * highlightStrength * 0.16
+        : 0);
     const highlighted = mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
 
     return {
@@ -1094,6 +1140,31 @@ function createLayeredPartCanvas(params: {
     const sourceG = finishData.data[index + 1];
     const sourceB = finishData.data[index + 2];
     const sourceBrightness = (sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722) / 255;
+
+    if (isChromeFinish) {
+      const sourceLinear = {
+        r: srgbChannelToLinear(sourceR),
+        g: srgbChannelToLinear(sourceG),
+        b: srgbChannelToLinear(sourceB)
+      };
+      const chromeContrast = 1 + textureStrength * 1.65;
+      const coolMetal = {
+        r: clamp(0.62 + (sourceLinear.r - 0.62) * chromeContrast, 0.02, 1),
+        g: clamp(0.64 + (sourceLinear.g - 0.64) * chromeContrast, 0.02, 1),
+        b: clamp(0.68 + (sourceLinear.b - 0.68) * chromeContrast, 0.02, 1)
+      };
+      const tintAmount = isWhiteTint ? 0 : colorOpacity * 0.22;
+      const tintedChrome = mixLinearColor(coolMetal, boostedTintLinear, tintAmount);
+      const chromeHighlight = smoothstep(0.7, 0.98, sourceBrightness) * highlightProtection * 0.18;
+      const finalChrome = mixLinearColor(tintedChrome, { r: 1, g: 1, b: 1 }, chromeHighlight);
+
+      outputData.data[index] = linearChannelToSrgb(finalChrome.r);
+      outputData.data[index + 1] = linearChannelToSrgb(finalChrome.g);
+      outputData.data[index + 2] = linearChannelToSrgb(finalChrome.b);
+      outputData.data[index + 3] = Math.round(maskAlpha * sourceAlpha * 255);
+      continue;
+    }
+
     const transfer = colorTransferTable[Math.round(sourceBrightness * 255)];
 
     outputData.data[index] = transfer.r;
@@ -1177,6 +1248,7 @@ async function renderLayeredProductMockup(params: {
     const partCanvas = createLayeredPartCanvas({
       width,
       height,
+      finish,
       finishImage,
       maskImage,
       maskTargetColor,
@@ -2355,7 +2427,12 @@ export default function MockupGenerator({
                         template.pantoneOptions,
                         partPantones[part.id] || ""
                       );
-                      const selectedFinish = resolvePartFinishSelection(part, partFinishes[part.id]);
+                      const renderableFinishes = getRenderablePartFinishes(template, part);
+                      const selectedFinish = resolveRenderablePartFinishSelection(
+                        template,
+                        part,
+                        partFinishes[part.id]
+                      );
                       const partNumber = getPartNumberText(part.label, Math.max(partIndex, 0));
                       const isFocusedPart = activePartId === part.id;
                       const isMutedPart = Boolean(activePartId) && !isFocusedPart;
@@ -2457,14 +2534,14 @@ export default function MockupGenerator({
                                 </div>
                               ) : null}
 
-                              {part.allowedFinishes?.length ? (
+                              {renderableFinishes.length ? (
                                 <div className="part-finish-field">
                                   <span className="control-label">Material finish</span>
                                   <div
                                     className="quick-choice-row"
                                     aria-label={`${part.label} finish options`}
                                   >
-                                    {part.allowedFinishes.map((finish) => (
+                                    {renderableFinishes.map((finish) => (
                                       <button
                                         key={`${part.id}-${finish}`}
                                         type="button"

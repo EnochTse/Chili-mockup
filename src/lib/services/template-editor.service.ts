@@ -62,6 +62,13 @@ const defaultLayeredFinishRules: Record<ProductFinishOption, LayeredRenderFinish
     highlightProtection: 0.34,
     textureStrength: 0.2,
     saturationBoost: 0.04
+  },
+  chrome: {
+    colorOpacity: 0.16,
+    blendMode: "source-over",
+    highlightProtection: 0.72,
+    textureStrength: 0.34,
+    saturationBoost: 0
   }
 };
 
