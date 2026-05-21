@@ -6,9 +6,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
 import { getQuickColorOptions, resolveColorOption } from "@/lib/services/color-option.service";
 import {
+  isColorLockedFinish,
   productFinishLabels,
   resolvePartFinishSelection
 } from "@/lib/services/finish-option.service";
+import {
+  normalizeProductCategory,
+  productCategoryOptions
+} from "@/lib/services/product-category.service";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import type {
   ProductFinishOption,
@@ -149,13 +154,20 @@ function resolveRenderablePartFinishSelection(
   );
 }
 
+function getFallbackPantoneCode(template: TemplatePublicDto, part: TemplatePublicDto["colorParts"][number]) {
+  return part.defaultPantoneCode || template.pantoneOptions[0]?.code || "";
+}
+
 function buildSelectedPartPantones(
   template: TemplatePublicDto,
   partPantones: Record<string, string>,
   partFinishes: Record<string, ProductFinishOption>
 ): SelectedPartPantone[] {
   return template.colorParts.map((part) => {
-    const pantoneCode = partPantones[part.id] || "";
+    const selectedFinish = resolveRenderablePartFinishSelection(template, part, partFinishes[part.id]);
+    const pantoneCode =
+      partPantones[part.id] ||
+      (isColorLockedFinish(selectedFinish) ? getFallbackPantoneCode(template, part) : "");
     const pantone = resolveColorOption(template.pantoneOptions, pantoneCode);
     if (!pantone) {
       throw new Error(`INVALID_PANTONE: Missing or invalid Pantone selection for ${part.label}.`);
@@ -170,7 +182,7 @@ function buildSelectedPartPantones(
       partMaskImageUrl: part.partMaskImageUrl,
       pantoneCode,
       pantone,
-      selectedFinish: resolveRenderablePartFinishSelection(template, part, partFinishes[part.id])
+      selectedFinish
     };
   });
 }
@@ -967,6 +979,11 @@ function smoothstep(edge0: number, edge1: number, value: number) {
   return t * t * (3 - 2 * t);
 }
 
+function reflectionBand(position: number, center: number, width: number) {
+  const distance = (position - center) / width;
+  return Math.exp(-distance * distance);
+}
+
 function getRedReferenceMaskAlpha(maskData: Uint8ClampedArray, index: number) {
   const r = maskData[index];
   const g = maskData[index + 1];
@@ -1140,6 +1157,9 @@ function createLayeredPartCanvas(params: {
     const sourceG = finishData.data[index + 1];
     const sourceB = finishData.data[index + 2];
     const sourceBrightness = (sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722) / 255;
+    const pixelIndex = index / 4;
+    const x = (pixelIndex % width) / width;
+    const y = Math.floor(pixelIndex / width) / height;
 
     if (isChromeFinish) {
       const sourceLinear = {
@@ -1153,7 +1173,7 @@ function createLayeredPartCanvas(params: {
         g: clamp(0.64 + (sourceLinear.g - 0.64) * chromeContrast, 0.02, 1),
         b: clamp(0.68 + (sourceLinear.b - 0.68) * chromeContrast, 0.02, 1)
       };
-      const tintAmount = isWhiteTint ? 0 : colorOpacity * 0.22;
+      const tintAmount = 0;
       const tintedChrome = mixLinearColor(coolMetal, boostedTintLinear, tintAmount);
       const chromeHighlight = smoothstep(0.7, 0.98, sourceBrightness) * highlightProtection * 0.18;
       const finalChrome = mixLinearColor(tintedChrome, { r: 1, g: 1, b: 1 }, chromeHighlight);
@@ -1166,10 +1186,31 @@ function createLayeredPartCanvas(params: {
     }
 
     const transfer = colorTransferTable[Math.round(sourceBrightness * 255)];
+    let outputR = transfer.r;
+    let outputG = transfer.g;
+    let outputB = transfer.b;
 
-    outputData.data[index] = transfer.r;
-    outputData.data[index + 1] = transfer.g;
-    outputData.data[index + 2] = transfer.b;
+    if (isGlossyFinish) {
+      const verticalFalloff = 0.68 + reflectionBand(y, 0.34, 0.58) * 0.32;
+      const broadReflection = reflectionBand(x, 0.53, 0.055) * 0.18;
+      const crispReflection = reflectionBand(x, 0.47, 0.018) * 0.24;
+      const rimReflection = reflectionBand(x, 0.59, 0.024) * 0.16;
+      const reflectedLight = clamp(
+        (broadReflection + crispReflection + rimReflection) * verticalFalloff,
+        0,
+        0.36
+      );
+      const edgeDepth =
+        (reflectionBand(x, 0.42, 0.018) + reflectionBand(x, 0.64, 0.02)) * 0.08;
+
+      outputR = Math.round(clamp(outputR * (1 - edgeDepth) + 255 * reflectedLight, 0, 255));
+      outputG = Math.round(clamp(outputG * (1 - edgeDepth) + 255 * reflectedLight, 0, 255));
+      outputB = Math.round(clamp(outputB * (1 - edgeDepth) + 255 * reflectedLight, 0, 255));
+    }
+
+    outputData.data[index] = outputR;
+    outputData.data[index + 1] = outputG;
+    outputData.data[index + 2] = outputB;
     outputData.data[index + 3] = Math.round(maskAlpha * sourceAlpha * 255);
   }
 
@@ -1348,6 +1389,9 @@ export default function MockupGenerator({
   const renderPreviewShellRef = useRef<HTMLDivElement | null>(null);
   const formSectionRefs = useRef<Array<HTMLElement | null>>([]);
   const [activeFormSectionIndex, setActiveFormSectionIndex] = useState(0);
+  const [selectedCategory, setSelectedCategory] = useState(
+    normalizeProductCategory(initialTemplate?.category)
+  );
 
   const showDebug =
     process.env.NODE_ENV === "development" ||
@@ -1410,6 +1454,7 @@ export default function MockupGenerator({
       setOpenPartId(null);
       setExpandedPartId(initialTemplate.colorParts[0]?.id || null);
       setFocusedPartId(initialTemplate.colorParts[0]?.id || null);
+      setSelectedCategory(normalizeProductCategory(initialTemplate.category));
       setPartPantones(
         Object.fromEntries(
           initialTemplate.colorParts
@@ -1441,6 +1486,18 @@ export default function MockupGenerator({
     setFocusedPartId(null);
     setPartFinishes({});
   }, [productSlug]);
+
+  function selectProductCategory(category: (typeof productCategoryOptions)[number]) {
+    if (!categoryCounts.get(category)) return;
+
+    setSelectedCategory(category);
+    const nextTemplate = availableTemplates.find(
+      (availableTemplate) => normalizeProductCategory(availableTemplate.category) === category
+    );
+    if (nextTemplate && normalizeProductCategory(template?.category) !== category) {
+      router.push(`/mockup/${nextTemplate.slug}`);
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -1802,23 +1859,33 @@ export default function MockupGenerator({
   );
 
   const hasAllPartPantones = template
-    ? template.colorParts.every((part) => Boolean(partPantones[part.id]))
+    ? template.colorParts.every((part) => {
+        const selectedFinish = resolveRenderablePartFinishSelection(
+          template,
+          part,
+          partFinishes[part.id]
+        );
+        return isColorLockedFinish(selectedFinish) || Boolean(partPantones[part.id]);
+      })
     : false;
-  const configuredPartCount = template
-    ? template.colorParts.filter((part) => Boolean(partPantones[part.id])).length
-    : 0;
-  const workflowTotalSteps = (template?.colorParts.length || 0) + 3;
-  const workflowCompletedSteps =
-    configuredPartCount +
-    (logoPrintColor ? 1 : 0) +
-    (printingMethod ? 1 : 0) +
-    (logoFile ? 1 : 0);
-  const workflowCompletionPercent = workflowTotalSteps
-    ? Math.round((workflowCompletedSteps / workflowTotalSteps) * 100)
-    : 0;
   const primaryPrintMethodLabel = printingMethod
     ? getPrintingMethodPrompt(printingMethod).label
     : "Not selected";
+  const filteredAvailableTemplates = useMemo(
+    () =>
+      availableTemplates.filter(
+        (availableTemplate) => normalizeProductCategory(availableTemplate.category) === selectedCategory
+      ),
+    [availableTemplates, selectedCategory]
+  );
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const availableTemplate of availableTemplates) {
+      const category = normalizeProductCategory(availableTemplate.category);
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+    return counts;
+  }, [availableTemplates]);
 
   const isLayeredTemplate = Boolean(template);
   const canGenerate =
@@ -2045,20 +2112,40 @@ export default function MockupGenerator({
           </Link>
           <div className="site-bar-actions">
             {availableTemplates.length > 0 ? (
-              <label className="product-switcher">
-                <span className="product-switcher-label">Product</span>
-                <select
-                  className="product-switcher-select"
-                  value={productSlug}
-                  onChange={(event) => router.push(`/mockup/${event.target.value}`)}
-                >
-                  {availableTemplates.map((availableTemplate) => (
-                    <option key={availableTemplate.slug} value={availableTemplate.slug}>
-                      {availableTemplate.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="nav-product-controls">
+                <nav className="category-filter-bar" aria-label="Product categories">
+                  {productCategoryOptions.map((category) => {
+                    const isActive = selectedCategory === category;
+                    const productCount = categoryCounts.get(category) || 0;
+
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        className={`category-filter-button${isActive ? " is-active" : ""}`}
+                        disabled={!productCount}
+                        onClick={() => selectProductCategory(category)}
+                      >
+                        {category}
+                      </button>
+                    );
+                  })}
+                </nav>
+                <label className="product-switcher">
+                  <span className="product-switcher-label">Product</span>
+                  <select
+                    className="product-switcher-select"
+                    value={productSlug}
+                    onChange={(event) => router.push(`/mockup/${event.target.value}`)}
+                  >
+                    {filteredAvailableTemplates.map((availableTemplate) => (
+                      <option key={availableTemplate.slug} value={availableTemplate.slug}>
+                        {availableTemplate.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             ) : null}
             <Link href="/setup" className="secondary-link-button">
               Setup studio
@@ -2361,28 +2448,6 @@ export default function MockupGenerator({
                       : "This product needs material base images and part references before it can use the local layered renderer."}
                   </p>
                 </div>
-                <div className="config-status-block">
-                  <span
-                    className={`status-pill${
-                      isLayeredTemplate ? " is-complete" : canGenerate ? " is-complete" : ""
-                    }`}
-                  >
-                    {isLayeredTemplate
-                      ? "Live preview active"
-                      : canGenerate
-                        ? "Ready to generate"
-                        : "Setup required"}
-                  </span>
-                  <p className="config-progress-copy">
-                    {workflowCompletedSteps} of {workflowTotalSteps} required selections completed.
-                  </p>
-                </div>
-                <div className="config-progress-track" aria-hidden="true">
-                  <span
-                    className="config-progress-fill"
-                    style={{ width: `${workflowCompletionPercent}%` }}
-                  />
-                </div>
               </div>
 
               <form className="generator-form" onSubmit={handleSubmit}>
@@ -2433,6 +2498,7 @@ export default function MockupGenerator({
                         part,
                         partFinishes[part.id]
                       );
+                      const isSelectedFinishColorLocked = isColorLockedFinish(selectedFinish);
                       const partNumber = getPartNumberText(part.label, Math.max(partIndex, 0));
                       const isFocusedPart = activePartId === part.id;
                       const isMutedPart = Boolean(activePartId) && !isFocusedPart;
@@ -2462,7 +2528,7 @@ export default function MockupGenerator({
                                 </span>
                                 <span className="part-title-stack">
                                   <span className="control-label">
-                                    {part.label} Pantone color
+                                    {part.label} {isSelectedFinishColorLocked ? "Material reference" : "Pantone color"}
                                   </span>
                                   <span className="fine-print part-collapse-description">
                                     {part.description}
@@ -2476,13 +2542,17 @@ export default function MockupGenerator({
                               className="pantone-trigger"
                               aria-label={`${part.label} Pantone color`}
                               aria-expanded={openPartId === part.id}
+                              disabled={isSelectedFinishColorLocked}
                               onClick={() => {
+                                if (isSelectedFinishColorLocked) return;
                                 setFocusedPartId(part.id);
                                 setExpandedPartId(part.id);
                                 setOpenPartId((current) => (current === part.id ? null : part.id));
                               }}
                             >
-                              {selectedPantone ? (
+                              {isSelectedFinishColorLocked ? (
+                                <span>{selectedFinish ? productFinishLabels[selectedFinish] : "Reference finish"}</span>
+                              ) : selectedPantone ? (
                                 <>
                                   <span
                                     className="color-swatch"
@@ -2499,31 +2569,37 @@ export default function MockupGenerator({
 
                           <div className="part-selection-body">
                             <div className="part-selection-body-inner">
-                              <div className="quick-color-row">
-                                {quickColorOptions.map((option) => (
-                                  <button
-                                    key={`${part.id}-${option.code}`}
-                                    type="button"
-                                    className={`quick-color-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
-                                    onClick={() => {
-                                      selectExpandedPart(part.id);
-                                      setPartPantones((current) => ({
-                                        ...current,
-                                        [part.id]: option.code
-                                      }));
-                                    }}
-                                  >
-                                    <span
-                                      className="color-swatch"
-                                      style={{ backgroundColor: option.previewHex }}
-                                      aria-hidden="true"
-                                    />
-                                    <span>{option.label}</span>
-                                  </button>
-                                ))}
-                              </div>
+                              {isSelectedFinishColorLocked ? (
+                                <p className="finish-locked-note">
+                                  This finish keeps the reference material and does not use Pantone color.
+                                </p>
+                              ) : (
+                                <div className="quick-color-row">
+                                  {quickColorOptions.map((option) => (
+                                    <button
+                                      key={`${part.id}-${option.code}`}
+                                      type="button"
+                                      className={`quick-color-button${partPantones[part.id] === option.code ? " is-active" : ""}`}
+                                      onClick={() => {
+                                        selectExpandedPart(part.id);
+                                        setPartPantones((current) => ({
+                                          ...current,
+                                          [part.id]: option.code
+                                        }));
+                                      }}
+                                    >
+                                      <span
+                                        className="color-swatch"
+                                        style={{ backgroundColor: option.previewHex }}
+                                        aria-hidden="true"
+                                      />
+                                      <span>{option.label}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
 
-                              {selectedPantone ? (
+                              {selectedPantone && !isSelectedFinishColorLocked ? (
                                 <div className="color-preview">
                                   <span
                                     className="color-swatch"
@@ -2561,7 +2637,7 @@ export default function MockupGenerator({
                                 </div>
                               ) : null}
 
-                              {openPartId === part.id ? (
+                              {openPartId === part.id && !isSelectedFinishColorLocked ? (
                                 <div className="pantone-options-shell">
                                   <div
                                     className="pantone-options-list"

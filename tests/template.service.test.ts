@@ -96,7 +96,7 @@ describe("template.service", () => {
       id: "umbrella-classic-black",
       slug: "umbrella-classic-black",
       name: "Classic Umbrella",
-      category: "umbrella",
+      category: "Accessories",
       description: "Classic umbrella mockup generator using the real product photo and instruction guide.",
       size: "Standard full-size canopy",
       baseImageUrl: "/mockup-templates/umbrella-classic-black/base-product.png",

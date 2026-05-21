@@ -9,6 +9,10 @@ import {
   productFinishOptions,
   resolvePartDefaultFinish
 } from "@/lib/services/finish-option.service";
+import {
+  normalizeProductCategory,
+  productCategoryOptions
+} from "@/lib/services/product-category.service";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import type {
   LayeredRenderFinishRule,
@@ -119,7 +123,7 @@ function buildFormStateFromTemplate(template: TemplatePublicDto): EditorFormStat
     originalSlug: template.slug,
     slug: template.slug,
     name: template.name,
-    category: template.category,
+    category: normalizeProductCategory(template.category),
     description: template.description,
     size: template.size || "",
     specifications:
@@ -1016,14 +1020,20 @@ export default function TemplateSetupStudio({
 
               <label className="setup-field">
                 <span className="control-label">Category</span>
-                <input
+                <select
                   className="input-shell"
                   value={formState.category}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, category: event.target.value }))
                   }
-                  placeholder="umbrella"
-                />
+                >
+                  <option value="">Select category</option>
+                  {productCategoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label className="setup-field">

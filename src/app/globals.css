@@ -267,6 +267,60 @@ summary:focus-visible {
   gap: var(--spacing-12);
 }
 
+.nav-product-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-12);
+}
+
+.category-filter-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 4px;
+  border: 1px solid rgba(15, 16, 18, 0.08);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: var(--shadow-button);
+}
+
+.category-filter-button {
+  position: relative;
+  min-height: 28px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-gravel);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 0 10px;
+  white-space: nowrap;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) ease,
+    opacity var(--motion-fast) ease,
+    transform var(--motion-fast) var(--motion-ease);
+}
+
+.category-filter-button:hover:not(:disabled) {
+  color: var(--color-obsidian);
+  transform: translateY(-1px);
+}
+
+.category-filter-button.is-active {
+  background: #111214;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 16, 18, 0.16);
+}
+
+.category-filter-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
 .product-switcher {
   display: inline-flex;
   align-items: center;
@@ -288,6 +342,17 @@ summary:focus-visible {
   box-shadow: var(--shadow-button);
   color: var(--color-obsidian);
   padding: 0 var(--spacing-12);
+}
+
+.finish-locked-note {
+  margin: 0;
+  border: 1px solid rgba(15, 16, 18, 0.08);
+  border-radius: var(--radius-md);
+  background: rgba(15, 16, 18, 0.035);
+  color: var(--color-gravel);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 12px;
 }
 
 .status-pill {
@@ -892,33 +957,6 @@ summary:focus-visible {
   gap: var(--spacing-12);
   padding: 0 0 var(--spacing-24);
   border-bottom: 0;
-}
-
-.config-status-block {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-12);
-}
-
-.config-progress-copy {
-  margin: 0;
-  color: var(--color-gravel);
-  font-size: 13px;
-}
-
-.config-progress-track {
-  overflow: hidden;
-  height: 8px;
-  border-radius: 9999px;
-  background: rgba(15, 16, 18, 0.08);
-}
-
-.config-progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #111214, #54565b);
 }
 
 .form-section {
@@ -2327,8 +2365,7 @@ input[type="file"].input-shell::file-selector-button {
   }
 
   .section-heading-row,
-  .form-section-head,
-  .config-status-block {
+  .form-section-head {
     align-items: stretch;
     flex-direction: column;
   }
@@ -2398,6 +2435,21 @@ input[type="file"].input-shell::file-selector-button {
     width: 100%;
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .nav-product-controls,
+  .category-filter-bar {
+    width: 100%;
+  }
+
+  .nav-product-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .category-filter-bar {
+    overflow-x: auto;
+    justify-content: flex-start;
   }
 
   .product-switcher {

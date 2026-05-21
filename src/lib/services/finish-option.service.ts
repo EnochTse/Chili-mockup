@@ -16,10 +16,17 @@ export const productFinishLabels: Record<ProductFinishOption, string> = {
   chrome: "Chrome"
 };
 
+export const colorLockedFinishOptions = ["chrome"] as const satisfies readonly ProductFinishOption[];
+const colorLockedFinishSet: readonly ProductFinishOption[] = colorLockedFinishOptions;
+
 type PartFinishConfig = {
   allowedFinishes?: unknown;
   defaultFinish?: unknown;
 };
+
+export function isColorLockedFinish(finish: ProductFinishOption | undefined) {
+  return Boolean(finish && colorLockedFinishSet.includes(finish));
+}
 
 export function normalizeProductFinishOption(value: unknown): ProductFinishOption | undefined {
   if (typeof value !== "string") return undefined;
