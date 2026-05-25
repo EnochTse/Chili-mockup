@@ -5,9 +5,9 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
-    "prebuild:netlify": "node scripts/prepare-netlify-build.mjs",
-    "build:netlify": "next build --webpack",
-    "postbuild:netlify": "node scripts/verify-netlify-build.mjs",
+    "build:netlify": "node scripts/run-netlify-build.mjs",
+    "netlify:prepare": "node scripts/prepare-netlify-build.mjs",
+    "netlify:verify": "node scripts/verify-netlify-build.mjs",
     "netlify:env": "node scripts/create-netlify-env-from-local.mjs",
     "start": "next start",
     "add:product": "node scripts/add-product-template.mjs",
