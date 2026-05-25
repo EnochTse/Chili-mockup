@@ -960,9 +960,9 @@ function isNearWhiteTint(tint: Rgb) {
 
 function getWhiteAlbedoLinear(tint: Rgb): LinearRgb {
   const whiteBase = {
-    r: clamp(230 + (tint.r - 255) * 0.14, 218, 234),
-    g: clamp(229 + (tint.g - 255) * 0.14, 217, 233),
-    b: clamp(225 + (tint.b - 255) * 0.14, 214, 230)
+    r: clamp(246 + (tint.r - 255) * 0.06, 238, 248),
+    g: clamp(245 + (tint.g - 255) * 0.06, 237, 247),
+    b: clamp(242 + (tint.b - 255) * 0.06, 234, 244)
   };
 
   return {
@@ -979,9 +979,122 @@ function smoothstep(edge0: number, edge1: number, value: number) {
   return t * t * (3 - 2 * t);
 }
 
-function reflectionBand(position: number, center: number, width: number) {
-  const distance = (position - center) / width;
-  return Math.exp(-distance * distance);
+type LayeredMaterialProfile = {
+  tonalAnchor: number;
+  tonalContrast: number;
+  shadeBase: number;
+  shadeRange: number;
+  shadeGamma: number;
+  shadowStart: number;
+  shadowEnd: number;
+  shadowStrength: number;
+  minShade: number;
+  maxShade: number;
+  highlightStart: number;
+  highlightEnd: number;
+  highlightPower: number;
+  highlightStrength: number;
+  microDetailStrength: number;
+  microDetailClamp: number;
+};
+
+function getLayeredMaterialProfile(params: {
+  finish: ProductFinishOption;
+  isWhiteTint: boolean;
+  highlightProtection: number;
+  textureStrength: number;
+}): LayeredMaterialProfile {
+  const { finish, isWhiteTint, highlightProtection, textureStrength } = params;
+
+  if (isWhiteTint) {
+    return {
+      tonalAnchor: 0.6,
+      tonalContrast: 1 + textureStrength * 1.55,
+      shadeBase: 0.72,
+      shadeRange: 0.31,
+      shadeGamma: 1.05,
+      shadowStart: 0.16,
+      shadowEnd: 0.68,
+      shadowStrength: 0.12 + textureStrength * 0.12,
+      minShade: 0.62,
+      maxShade: 1.06,
+      highlightStart: 0.72,
+      highlightEnd: 0.98,
+      highlightPower: finish === "glossy" ? 1.55 : 2.35,
+      highlightStrength: clamp(0.04 + highlightProtection * 0.18, 0.04, 0.24),
+      microDetailStrength: 1.35 + textureStrength * 2.8,
+      microDetailClamp: 0.12 + textureStrength * 0.2
+    };
+  }
+
+  if (finish === "glossy") {
+    return {
+      tonalAnchor: 0.6,
+      tonalContrast: 1 + textureStrength * 1.15,
+      shadeBase: 0.43,
+      shadeRange: 0.78,
+      shadeGamma: 1.02,
+      shadowStart: 0.18,
+      shadowEnd: 0.62,
+      shadowStrength: 0.035,
+      minShade: 0.34,
+      maxShade: 1.18,
+      highlightStart: 0.74,
+      highlightEnd: 0.99,
+      highlightPower: 2.35,
+      highlightStrength: clamp(0.08 + highlightProtection * 0.24, 0.08, 0.3),
+      microDetailStrength: 0.9 + textureStrength * 1.55,
+      microDetailClamp: 0.07 + textureStrength * 0.12
+    };
+  }
+
+  if (finish === "rubber") {
+    return {
+      tonalAnchor: 0.64,
+      tonalContrast: 1 + textureStrength * 1.25,
+      shadeBase: 0.44,
+      shadeRange: 0.72,
+      shadeGamma: 1.12,
+      shadowStart: 0.2,
+      shadowEnd: 0.66,
+      shadowStrength: 0.08,
+      minShade: 0.3,
+      maxShade: 1.08,
+      highlightStart: 0.82,
+      highlightEnd: 0.99,
+      highlightPower: 2.6,
+      highlightStrength: clamp(0.035 + highlightProtection * 0.12, 0.035, 0.18),
+      microDetailStrength: 0.95 + textureStrength * 1.8,
+      microDetailClamp: 0.08 + textureStrength * 0.14
+    };
+  }
+
+  return {
+    tonalAnchor: 0.64,
+    tonalContrast: 1 + textureStrength * 1.35,
+    shadeBase: 0.44,
+    shadeRange: 0.76,
+    shadeGamma: 1.08,
+    shadowStart: 0.2,
+    shadowEnd: 0.66,
+    shadowStrength: 0.065,
+    minShade: 0.3,
+    maxShade: 1.14,
+    highlightStart: 0.78,
+    highlightEnd: 0.98,
+    highlightPower: 2.15,
+    highlightStrength: clamp(0.05 + highlightProtection * 0.2, 0.05, 0.28),
+    microDetailStrength: 1 + textureStrength * 1.95,
+    microDetailClamp: 0.09 + textureStrength * 0.16
+  };
+}
+
+function getPixelBrightness(data: Uint8ClampedArray, width: number, height: number, x: number, y: number) {
+  const sampleX = Math.round(clamp(x, 0, width - 1));
+  const sampleY = Math.round(clamp(y, 0, height - 1));
+  const index = (sampleY * width + sampleX) * 4;
+
+  return (data[index] * 0.2126 + data[index + 1] * 0.7152 + data[index + 2] * 0.0722) / 255;
 }
 
 function getRedReferenceMaskAlpha(maskData: Uint8ClampedArray, index: number) {
@@ -1079,69 +1192,11 @@ function createLayeredPartCanvas(params: {
   const albedoLinear = isWhiteTint
     ? getWhiteAlbedoLinear(tint)
     : mixLinearColor(neutralAlbedo, boostedTintLinear, colorOpacity);
-  const albedoLuminance = getRelativeLuminanceLinear(albedoLinear);
-  const highlightStrength = isWhiteTint
-    ? clamp(0.012 + highlightProtection * 0.052, 0.012, 0.064)
-    : isGlossyFinish
-      ? clamp(0.11 + highlightProtection * 0.34, 0.12, 0.42)
-      : clamp(0.05 + highlightProtection * 0.22, 0.04, 0.3);
-
-  // Treat Pantone as the surface albedo, then use the finish image only as luminance shading.
-  const colorTransferTable = Array.from({ length: 256 }, (_, level) => {
-    const sourceBrightness = level / 255;
-    const finishTextureStrength = isGlossyFinish ? textureStrength * 0.42 : textureStrength;
-    const textureContrast = isWhiteTint
-      ? 1 + (textureStrength + 0.08) * 1.9
-      : 1 + finishTextureStrength * 1.4;
-    const tonalAnchor = isWhiteTint ? 0.58 : isGlossyFinish ? 0.62 : 0.68;
-    const tonalBrightness = clamp(
-      tonalAnchor + (sourceBrightness - tonalAnchor) * textureContrast,
-      0,
-      1
-    );
-    const shadow = 1 - smoothstep(0.28, 0.68, tonalBrightness);
-    const highlight = smoothstep(0.78, 0.98, sourceBrightness);
-    const lightPantoneShadowGain = smoothstep(0.42, 0.72, albedoLuminance);
-    const shade = isWhiteTint
-      ? clamp(
-          0.5 + Math.pow(tonalBrightness, 1.12) * 0.45 - shadow * 0.16,
-          0.4,
-          0.94
-        )
-      : isGlossyFinish
-        ? clamp(
-            0.5 +
-              Math.pow(tonalBrightness, 1.02) * 0.82 -
-              shadow * (0.035 + lightPantoneShadowGain * 0.06),
-            0.34,
-            1.2
-          )
-      : clamp(
-          0.46 +
-            Math.pow(tonalBrightness, 1.08) * 0.72 -
-            shadow * (0.06 + lightPantoneShadowGain * 0.1),
-          0.28,
-          1.16
-        );
-    const shadedAlbedo = {
-      r: clamp(albedoLinear.r * shade, 0, 1),
-      g: clamp(albedoLinear.g * shade, 0, 1),
-      b: clamp(albedoLinear.b * shade, 0, 1)
-    };
-    const specularAmount =
-      (Math.pow(highlight, isWhiteTint ? 2.8 : isGlossyFinish ? 1.45 : 2.15) *
-        highlightStrength *
-        (1 - shadow * 0.7)) +
-      (isGlossyFinish
-        ? smoothstep(0.5, 0.9, sourceBrightness) * highlightStrength * 0.16
-        : 0);
-    const highlighted = mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
-
-    return {
-      r: linearChannelToSrgb(highlighted.r),
-      g: linearChannelToSrgb(highlighted.g),
-      b: linearChannelToSrgb(highlighted.b)
-    };
+  const profile = getLayeredMaterialProfile({
+    finish,
+    isWhiteTint,
+    highlightProtection,
+    textureStrength
   });
 
   for (let index = 0; index < outputData.data.length; index += 4) {
@@ -1158,8 +1213,8 @@ function createLayeredPartCanvas(params: {
     const sourceB = finishData.data[index + 2];
     const sourceBrightness = (sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722) / 255;
     const pixelIndex = index / 4;
-    const x = (pixelIndex % width) / width;
-    const y = Math.floor(pixelIndex / width) / height;
+    const pixelX = pixelIndex % width;
+    const pixelY = Math.floor(pixelIndex / width);
 
     if (isChromeFinish) {
       const sourceLinear = {
@@ -1185,32 +1240,48 @@ function createLayeredPartCanvas(params: {
       continue;
     }
 
-    const transfer = colorTransferTable[Math.round(sourceBrightness * 255)];
-    let outputR = transfer.r;
-    let outputG = transfer.g;
-    let outputB = transfer.b;
+    const sampleRadius = isGlossyFinish ? 3 : 2;
+    const neighborAverage =
+      (sourceBrightness * 2 +
+        getPixelBrightness(finishData.data, width, height, pixelX - sampleRadius, pixelY) +
+        getPixelBrightness(finishData.data, width, height, pixelX + sampleRadius, pixelY) +
+        getPixelBrightness(finishData.data, width, height, pixelX, pixelY - sampleRadius) +
+        getPixelBrightness(finishData.data, width, height, pixelX, pixelY + sampleRadius)) /
+      6;
+    const microDetail = clamp(
+      (sourceBrightness - neighborAverage) * profile.microDetailStrength,
+      -profile.microDetailClamp,
+      profile.microDetailClamp
+    );
+    const tonalBrightness = clamp(
+      profile.tonalAnchor + (sourceBrightness - profile.tonalAnchor) * profile.tonalContrast,
+      0,
+      1
+    );
+    const shadow = 1 - smoothstep(profile.shadowStart, profile.shadowEnd, tonalBrightness);
+    const highlight = smoothstep(profile.highlightStart, profile.highlightEnd, sourceBrightness);
+    const shade = clamp(
+      profile.shadeBase +
+        Math.pow(tonalBrightness, profile.shadeGamma) * profile.shadeRange -
+        shadow * profile.shadowStrength,
+      profile.minShade,
+      profile.maxShade
+    );
+    const detailShade = clamp(shade + microDetail, profile.minShade, profile.maxShade);
+    const shadedAlbedo = {
+      r: clamp(albedoLinear.r * detailShade, 0, 1),
+      g: clamp(albedoLinear.g * detailShade, 0, 1),
+      b: clamp(albedoLinear.b * detailShade, 0, 1)
+    };
+    const specularAmount =
+      Math.pow(highlight, profile.highlightPower) *
+      profile.highlightStrength *
+      (1 - shadow * 0.58);
+    const finalColor = mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
 
-    if (isGlossyFinish) {
-      const verticalFalloff = 0.68 + reflectionBand(y, 0.34, 0.58) * 0.32;
-      const broadReflection = reflectionBand(x, 0.53, 0.055) * 0.18;
-      const crispReflection = reflectionBand(x, 0.47, 0.018) * 0.24;
-      const rimReflection = reflectionBand(x, 0.59, 0.024) * 0.16;
-      const reflectedLight = clamp(
-        (broadReflection + crispReflection + rimReflection) * verticalFalloff,
-        0,
-        0.36
-      );
-      const edgeDepth =
-        (reflectionBand(x, 0.42, 0.018) + reflectionBand(x, 0.64, 0.02)) * 0.08;
-
-      outputR = Math.round(clamp(outputR * (1 - edgeDepth) + 255 * reflectedLight, 0, 255));
-      outputG = Math.round(clamp(outputG * (1 - edgeDepth) + 255 * reflectedLight, 0, 255));
-      outputB = Math.round(clamp(outputB * (1 - edgeDepth) + 255 * reflectedLight, 0, 255));
-    }
-
-    outputData.data[index] = outputR;
-    outputData.data[index + 1] = outputG;
-    outputData.data[index + 2] = outputB;
+    outputData.data[index] = linearChannelToSrgb(finalColor.r);
+    outputData.data[index + 1] = linearChannelToSrgb(finalColor.g);
+    outputData.data[index + 2] = linearChannelToSrgb(finalColor.b);
     outputData.data[index + 3] = Math.round(maskAlpha * sourceAlpha * 255);
   }
 
