@@ -90,6 +90,19 @@ type LinearRgb = {
 
 type LayeredRenderImages = Partial<Record<ProductFinishOption, HTMLImageElement>>;
 
+type LayeredFinishSource = {
+  imageData: ImageData;
+};
+
+type LayeredMaterialMaps = {
+  width: number;
+  height: number;
+  shadowMap: Uint8ClampedArray;
+  highlightMap: Uint8ClampedArray;
+  textureMap: Uint8ClampedArray;
+  specularMap: Uint8ClampedArray;
+};
+
 type LogoTransform = {
   offsetX: number;
   offsetY: number;
@@ -1097,6 +1110,140 @@ function getPixelBrightness(data: Uint8ClampedArray, width: number, height: numb
   return (data[index] * 0.2126 + data[index + 1] * 0.7152 + data[index + 2] * 0.0722) / 255;
 }
 
+function encodeUnitMapValue(value: number) {
+  return Math.round(clamp(value, 0, 1) * 255);
+}
+
+function encodeSignedMapValue(value: number, range: number) {
+  if (range <= 0) return 128;
+  return Math.round(clamp(0.5 + value / (range * 2), 0, 1) * 255);
+}
+
+function decodeSignedMapValue(value: number, range: number) {
+  if (range <= 0) return 0;
+  return (value / 255 - 0.5) * range * 2;
+}
+
+function encodeShadeMapValue(value: number, profile: LayeredMaterialProfile) {
+  const range = profile.maxShade - profile.minShade;
+  if (range <= 0) return 255;
+  return encodeUnitMapValue((value - profile.minShade) / range);
+}
+
+function decodeShadeMapValue(value: number, profile: LayeredMaterialProfile) {
+  return profile.minShade + (value / 255) * (profile.maxShade - profile.minShade);
+}
+
+function createLayeredFinishSource(
+  finishImage: HTMLImageElement,
+  width: number,
+  height: number
+): LayeredFinishSource {
+  const finishCanvas = document.createElement("canvas");
+  finishCanvas.width = width;
+  finishCanvas.height = height;
+  const finishContext = getCanvasContext(finishCanvas);
+  finishContext.drawImage(finishImage, 0, 0, width, height);
+
+  return {
+    imageData: finishContext.getImageData(0, 0, width, height)
+  };
+}
+
+function createLayeredMaterialMaps(params: {
+  finish: ProductFinishOption;
+  finishData: ImageData;
+  profile: LayeredMaterialProfile;
+}): LayeredMaterialMaps {
+  const { finish, finishData, profile } = params;
+  const { width, height } = finishData;
+  const pixelCount = width * height;
+  const shadowMap = new Uint8ClampedArray(pixelCount);
+  const highlightMap = new Uint8ClampedArray(pixelCount);
+  const textureMap = new Uint8ClampedArray(pixelCount);
+  const specularMap = new Uint8ClampedArray(pixelCount);
+  const sampleRadius = finish === "glossy" ? 3 : 2;
+
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+    const index = pixelIndex * 4;
+    const sourceBrightness =
+      (finishData.data[index] * 0.2126 +
+        finishData.data[index + 1] * 0.7152 +
+        finishData.data[index + 2] * 0.0722) /
+      255;
+    const pixelX = pixelIndex % width;
+    const pixelY = Math.floor(pixelIndex / width);
+    const neighborAverage =
+      (sourceBrightness * 2 +
+        getPixelBrightness(finishData.data, width, height, pixelX - sampleRadius, pixelY) +
+        getPixelBrightness(finishData.data, width, height, pixelX + sampleRadius, pixelY) +
+        getPixelBrightness(finishData.data, width, height, pixelX, pixelY - sampleRadius) +
+        getPixelBrightness(finishData.data, width, height, pixelX, pixelY + sampleRadius)) /
+      6;
+    const microDetail = clamp(
+      (sourceBrightness - neighborAverage) * profile.microDetailStrength,
+      -profile.microDetailClamp,
+      profile.microDetailClamp
+    );
+    const tonalBrightness = clamp(
+      profile.tonalAnchor + (sourceBrightness - profile.tonalAnchor) * profile.tonalContrast,
+      0,
+      1
+    );
+    const shadow = 1 - smoothstep(profile.shadowStart, profile.shadowEnd, tonalBrightness);
+    const highlight = smoothstep(profile.highlightStart, profile.highlightEnd, sourceBrightness);
+    const shade = clamp(
+      profile.shadeBase +
+        Math.pow(tonalBrightness, profile.shadeGamma) * profile.shadeRange -
+        shadow * profile.shadowStrength,
+      profile.minShade,
+      profile.maxShade
+    );
+    const specular =
+      Math.pow(highlight, profile.highlightPower) *
+      profile.highlightStrength *
+      (1 - shadow * 0.58);
+
+    shadowMap[pixelIndex] = encodeShadeMapValue(shade, profile);
+    highlightMap[pixelIndex] = encodeUnitMapValue(highlight);
+    textureMap[pixelIndex] = encodeSignedMapValue(microDetail, profile.microDetailClamp);
+    specularMap[pixelIndex] = encodeUnitMapValue(specular);
+  }
+
+  return {
+    width,
+    height,
+    shadowMap,
+    highlightMap,
+    textureMap,
+    specularMap
+  };
+}
+
+function composeLayeredMaterialColor(params: {
+  albedoLinear: LinearRgb;
+  maps: LayeredMaterialMaps;
+  profile: LayeredMaterialProfile;
+  pixelIndex: number;
+}): LinearRgb {
+  const { albedoLinear, maps, profile, pixelIndex } = params;
+  const shade = decodeShadeMapValue(maps.shadowMap[pixelIndex], profile);
+  const microDetail = decodeSignedMapValue(
+    maps.textureMap[pixelIndex],
+    profile.microDetailClamp
+  );
+  const detailShade = clamp(shade + microDetail, profile.minShade, profile.maxShade);
+  const highlightedPixel = maps.highlightMap[pixelIndex] / 255;
+  const specularAmount = (maps.specularMap[pixelIndex] / 255) * (0.92 + highlightedPixel * 0.08);
+  const shadedAlbedo = {
+    r: clamp(albedoLinear.r * detailShade, 0, 1),
+    g: clamp(albedoLinear.g * detailShade, 0, 1),
+    b: clamp(albedoLinear.b * detailShade, 0, 1)
+  };
+
+  return mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
+}
+
 function getRedReferenceMaskAlpha(maskData: Uint8ClampedArray, index: number) {
   const r = maskData[index];
   const g = maskData[index + 1];
@@ -1133,7 +1280,9 @@ function createLayeredPartCanvas(params: {
   width: number;
   height: number;
   finish: ProductFinishOption;
-  finishImage: HTMLImageElement;
+  finishSource: LayeredFinishSource;
+  materialMaps: LayeredMaterialMaps;
+  profile: LayeredMaterialProfile;
   maskImage: HTMLImageElement;
   maskTargetColor?: Rgb;
   tint: Rgb;
@@ -1146,7 +1295,9 @@ function createLayeredPartCanvas(params: {
     width,
     height,
     finish,
-    finishImage,
+    finishSource,
+    materialMaps,
+    profile,
     maskImage,
     maskTargetColor,
     tint,
@@ -1155,19 +1306,13 @@ function createLayeredPartCanvas(params: {
     textureStrength,
     saturationBoost
   } = params;
-  const finishCanvas = document.createElement("canvas");
-  finishCanvas.width = width;
-  finishCanvas.height = height;
-  const finishContext = getCanvasContext(finishCanvas);
-  finishContext.drawImage(finishImage, 0, 0, width, height);
-
   const maskCanvas = document.createElement("canvas");
   maskCanvas.width = width;
   maskCanvas.height = height;
   const maskContext = getCanvasContext(maskCanvas);
   maskContext.drawImage(maskImage, 0, 0, width, height);
 
-  const finishData = finishContext.getImageData(0, 0, width, height);
+  const finishData = finishSource.imageData;
   const maskData = maskContext.getImageData(0, 0, width, height);
   const outputCanvas = document.createElement("canvas");
   outputCanvas.width = width;
@@ -1175,7 +1320,6 @@ function createLayeredPartCanvas(params: {
   const outputContext = getCanvasContext(outputCanvas);
   const outputData = outputContext.createImageData(width, height);
   const isChromeFinish = finish === "chrome";
-  const isGlossyFinish = finish === "glossy";
   const tintLinear = {
     r: srgbChannelToLinear(tint.r),
     g: srgbChannelToLinear(tint.g),
@@ -1192,12 +1336,6 @@ function createLayeredPartCanvas(params: {
   const albedoLinear = isWhiteTint
     ? getWhiteAlbedoLinear(tint)
     : mixLinearColor(neutralAlbedo, boostedTintLinear, colorOpacity);
-  const profile = getLayeredMaterialProfile({
-    finish,
-    isWhiteTint,
-    highlightProtection,
-    textureStrength
-  });
 
   for (let index = 0; index < outputData.data.length; index += 4) {
     const maskAlpha = maskTargetColor
@@ -1213,8 +1351,6 @@ function createLayeredPartCanvas(params: {
     const sourceB = finishData.data[index + 2];
     const sourceBrightness = (sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722) / 255;
     const pixelIndex = index / 4;
-    const pixelX = pixelIndex % width;
-    const pixelY = Math.floor(pixelIndex / width);
 
     if (isChromeFinish) {
       const sourceLinear = {
@@ -1230,7 +1366,8 @@ function createLayeredPartCanvas(params: {
       };
       const tintAmount = 0;
       const tintedChrome = mixLinearColor(coolMetal, boostedTintLinear, tintAmount);
-      const chromeHighlight = smoothstep(0.7, 0.98, sourceBrightness) * highlightProtection * 0.18;
+      const chromeHighlight =
+        (materialMaps.highlightMap[pixelIndex] / 255) * highlightProtection * 0.18;
       const finalChrome = mixLinearColor(tintedChrome, { r: 1, g: 1, b: 1 }, chromeHighlight);
 
       outputData.data[index] = linearChannelToSrgb(finalChrome.r);
@@ -1240,44 +1377,12 @@ function createLayeredPartCanvas(params: {
       continue;
     }
 
-    const sampleRadius = isGlossyFinish ? 3 : 2;
-    const neighborAverage =
-      (sourceBrightness * 2 +
-        getPixelBrightness(finishData.data, width, height, pixelX - sampleRadius, pixelY) +
-        getPixelBrightness(finishData.data, width, height, pixelX + sampleRadius, pixelY) +
-        getPixelBrightness(finishData.data, width, height, pixelX, pixelY - sampleRadius) +
-        getPixelBrightness(finishData.data, width, height, pixelX, pixelY + sampleRadius)) /
-      6;
-    const microDetail = clamp(
-      (sourceBrightness - neighborAverage) * profile.microDetailStrength,
-      -profile.microDetailClamp,
-      profile.microDetailClamp
-    );
-    const tonalBrightness = clamp(
-      profile.tonalAnchor + (sourceBrightness - profile.tonalAnchor) * profile.tonalContrast,
-      0,
-      1
-    );
-    const shadow = 1 - smoothstep(profile.shadowStart, profile.shadowEnd, tonalBrightness);
-    const highlight = smoothstep(profile.highlightStart, profile.highlightEnd, sourceBrightness);
-    const shade = clamp(
-      profile.shadeBase +
-        Math.pow(tonalBrightness, profile.shadeGamma) * profile.shadeRange -
-        shadow * profile.shadowStrength,
-      profile.minShade,
-      profile.maxShade
-    );
-    const detailShade = clamp(shade + microDetail, profile.minShade, profile.maxShade);
-    const shadedAlbedo = {
-      r: clamp(albedoLinear.r * detailShade, 0, 1),
-      g: clamp(albedoLinear.g * detailShade, 0, 1),
-      b: clamp(albedoLinear.b * detailShade, 0, 1)
-    };
-    const specularAmount =
-      Math.pow(highlight, profile.highlightPower) *
-      profile.highlightStrength *
-      (1 - shadow * 0.58);
-    const finalColor = mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
+    const finalColor = composeLayeredMaterialColor({
+      albedoLinear,
+      maps: materialMaps,
+      profile,
+      pixelIndex
+    });
 
     outputData.data[index] = linearChannelToSrgb(finalColor.r);
     outputData.data[index + 1] = linearChannelToSrgb(finalColor.g);
@@ -1337,11 +1442,50 @@ async function renderLayeredProductMockup(params: {
 
   const width = layeredRender?.outputSize?.width || fallbackImage.naturalWidth || fallbackImage.width;
   const height = layeredRender?.outputSize?.height || fallbackImage.naturalHeight || fallbackImage.height;
+  const finishSources = Object.fromEntries(
+    Object.entries(finishImages).map(([finish, finishImage]) => [
+      finish,
+      createLayeredFinishSource(finishImage, width, height)
+    ])
+  ) as Partial<Record<ProductFinishOption, LayeredFinishSource>>;
+  const fallbackSource = finishSources[fallbackFinish];
+  if (!fallbackSource) {
+    throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish source is missing.");
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = getCanvasContext(canvas);
   context.drawImage(fallbackImage, 0, 0, width, height);
+  const materialMapCache = new Map<string, LayeredMaterialMaps>();
+
+  function getMaterialMapsFor(params: {
+    finish: ProductFinishOption;
+    finishSource: LayeredFinishSource;
+    profile: LayeredMaterialProfile;
+    isWhiteTint: boolean;
+    highlightProtection: number;
+    textureStrength: number;
+  }) {
+    const { finish, finishSource, profile, isWhiteTint, highlightProtection, textureStrength } = params;
+    const cacheKey = [
+      finish,
+      isWhiteTint ? "white" : "color",
+      highlightProtection.toFixed(3),
+      textureStrength.toFixed(3)
+    ].join("|");
+    const cachedMaps = materialMapCache.get(cacheKey);
+    if (cachedMaps) return cachedMaps;
+
+    const maps = createLayeredMaterialMaps({
+      finish,
+      finishData: finishSource.imageData,
+      profile
+    });
+    materialMapCache.set(cacheKey, maps);
+    return maps;
+  }
 
   for (const selection of params.selectedPartPantones) {
     const explicitMaskImage = maskImages[selection.partId];
@@ -1355,20 +1499,40 @@ async function renderLayeredProductMockup(params: {
     if (!explicitMaskImage && !maskTargetColor) continue;
 
     const finish = selection.selectedFinish || fallbackFinish;
-    const finishImage = finishImages[finish] || fallbackImage;
+    const finishSource = finishSources[finish] || fallbackSource;
     const rule = layeredRender?.finishRules?.[finish] || defaultLayeredFinishRule;
+    const tint = hexToRgb(selection.pantone.previewHex);
+    const isWhiteTint = isNearWhiteTint(tint);
+    const highlightProtection =
+      rule.highlightProtection ?? defaultLayeredFinishRule.highlightProtection;
+    const textureStrength = rule.textureStrength ?? defaultLayeredFinishRule.textureStrength;
+    const profile = getLayeredMaterialProfile({
+      finish,
+      isWhiteTint,
+      highlightProtection,
+      textureStrength
+    });
+    const materialMaps = getMaterialMapsFor({
+      finish,
+      finishSource,
+      profile,
+      isWhiteTint,
+      highlightProtection,
+      textureStrength
+    });
     const partCanvas = createLayeredPartCanvas({
       width,
       height,
       finish,
-      finishImage,
+      finishSource,
+      materialMaps,
+      profile,
       maskImage,
       maskTargetColor,
-      tint: hexToRgb(selection.pantone.previewHex),
+      tint,
       colorOpacity: rule.colorOpacity,
-      highlightProtection:
-        rule.highlightProtection ?? defaultLayeredFinishRule.highlightProtection,
-      textureStrength: rule.textureStrength ?? defaultLayeredFinishRule.textureStrength,
+      highlightProtection,
+      textureStrength,
       saturationBoost: rule.saturationBoost ?? defaultLayeredFinishRule.saturationBoost
     });
 
