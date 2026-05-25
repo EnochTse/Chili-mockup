@@ -51,6 +51,17 @@ const canvasBlendModeSchema = z.enum([
   "luminosity"
 ]);
 
+const layeredMaterialMapSchema = z
+  .object({
+    base: z.string().min(1).optional(),
+    shadow: z.string().min(1).optional(),
+    highlight: z.string().min(1).optional(),
+    texture: z.string().min(1).optional(),
+    specular: z.string().min(1).optional(),
+    edgeAo: z.string().min(1).optional()
+  })
+  .partial();
+
 const layeredRenderSchema = z.object({
   enabled: z.boolean(),
   mode: z.literal("local-layered"),
@@ -62,6 +73,7 @@ const layeredRenderSchema = z.object({
     .optional(),
   fallbackFinish: productFinishOptionSchema,
   finishBaseImages: z.partialRecord(productFinishOptionSchema, z.string().min(1)),
+  materialMaps: z.partialRecord(productFinishOptionSchema, layeredMaterialMapSchema).optional(),
   partMasks: z.record(z.string().min(1), z.string().min(1)),
   finishRules: z
     .partialRecord(
@@ -285,6 +297,19 @@ function resolveTemplatePartMasks(
 function resolveLayeredRenderAssets(template: ProductTemplate): ProductTemplate["layeredRender"] {
   const layeredRender = template.layeredRender;
   if (!layeredRender) return undefined;
+  const materialMaps = layeredRender.materialMaps
+    ? Object.fromEntries(
+        Object.entries(layeredRender.materialMaps).map(([finish, mapSet]) => [
+          finish,
+          Object.fromEntries(
+            Object.entries(mapSet).map(([mapKey, assetReference]) => [
+              mapKey,
+              toLayeredAssetPublicUrl(template.assetFolderPublicPath, assetReference)
+            ])
+          )
+        ])
+      )
+    : undefined;
 
   return {
     ...layeredRender,
@@ -299,7 +324,8 @@ function resolveLayeredRenderAssets(template: ProductTemplate): ProductTemplate[
         partId,
         toLayeredAssetPublicUrl(template.assetFolderPublicPath, assetReference)
       ])
-    )
+    ),
+    ...(materialMaps ? { materialMaps } : {})
   };
 }
 
@@ -357,6 +383,14 @@ export async function loadTemplate(productSlug: string): Promise<ResolvedProduct
         validateTemplateAsset(
           resolveLayeredAssetPath(template.assetFolderPublicPath, assetReference),
           "part_mask"
+        )
+      ),
+      ...Object.values(template.layeredRender.materialMaps || {}).flatMap((mapSet) =>
+        Object.values(mapSet).map((assetReference) =>
+          validateTemplateAsset(
+            resolveLayeredAssetPath(template.assetFolderPublicPath, assetReference),
+            "base"
+          )
         )
       )
     ]);

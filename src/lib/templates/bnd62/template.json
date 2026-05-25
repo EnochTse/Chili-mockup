@@ -110,15 +110,25 @@
     "enabled": true,
     "mode": "local-layered",
     "outputSize": {
-      "width": 4096,
-      "height": 4096
+      "width": 2048,
+      "height": 2048
     },
     "fallbackFinish": "matte",
     "finishBaseImages": {
       "matte": "layered/BND62_Matt.png",
-      "glossy": "layered/BND62_Glossy.png",
+      "glossy": "layered/BND62_glossy_base.png",
       "rubber": "layered/BND62_Rubber.png",
       "chrome": "layered/BND62_Chrome.png"
+    },
+    "materialMaps": {
+      "glossy": {
+        "base": "layered/BND62_glossy_base.png",
+        "shadow": "layered/BND62_glossy_shadow.png",
+        "highlight": "layered/BND62_glossy_highlight.png",
+        "texture": "layered/BND62_glossy_texture.png",
+        "specular": "layered/BND62_glossy_specular.png",
+        "edgeAo": "layered/BND62_glossy_edge_ao.png"
+      }
     },
     "partMasks": {
       "part-1-nan6hb": "layered/BND62_part_1.png",

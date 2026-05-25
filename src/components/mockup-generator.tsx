@@ -16,6 +16,7 @@ import {
 } from "@/lib/services/product-category.service";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import type {
+  LayeredMaterialMapKey,
   ProductFinishOption,
   SelectedPartPantone,
   TemplatePublicDto,
@@ -102,6 +103,21 @@ type LayeredMaterialMaps = {
   textureMap: Uint8ClampedArray;
   specularMap: Uint8ClampedArray;
 };
+
+type LayeredMaterialMapImages = Partial<Record<LayeredMaterialMapKey, HTMLImageElement>>;
+
+type LayeredMaterialMapSources = Partial<Record<LayeredMaterialMapKey, ImageData>>;
+
+type LayeredMaterialMapImagesByFinish = Partial<
+  Record<ProductFinishOption, LayeredMaterialMapImages>
+>;
+
+type LayeredMaterialMapSourcesByFinish = Partial<
+  Record<ProductFinishOption, LayeredMaterialMapSources>
+>;
+
+const layeredMaterialMapCache = new Map<string, LayeredMaterialMaps>();
+const maxLayeredMaterialMapCacheEntries = 12;
 
 type LogoTransform = {
   offsetX: number;
@@ -1134,28 +1150,104 @@ function decodeShadeMapValue(value: number, profile: LayeredMaterialProfile) {
   return profile.minShade + (value / 255) * (profile.maxShade - profile.minShade);
 }
 
+function createLayeredImageData(
+  image: HTMLImageElement,
+  width: number,
+  height: number
+) {
+  const imageCanvas = document.createElement("canvas");
+  imageCanvas.width = width;
+  imageCanvas.height = height;
+  const imageContext = getCanvasContext(imageCanvas);
+  imageContext.drawImage(image, 0, 0, width, height);
+
+  return imageContext.getImageData(0, 0, width, height);
+}
+
 function createLayeredFinishSource(
   finishImage: HTMLImageElement,
   width: number,
   height: number
 ): LayeredFinishSource {
-  const finishCanvas = document.createElement("canvas");
-  finishCanvas.width = width;
-  finishCanvas.height = height;
-  const finishContext = getCanvasContext(finishCanvas);
-  finishContext.drawImage(finishImage, 0, 0, width, height);
-
   return {
-    imageData: finishContext.getImageData(0, 0, width, height)
+    imageData: createLayeredImageData(finishImage, width, height)
   };
+}
+
+function createLayeredMaterialMapSources(
+  materialMapImages: LayeredMaterialMapImages,
+  width: number,
+  height: number
+): LayeredMaterialMapSources {
+  return Object.fromEntries(
+    Object.entries(materialMapImages).map(([mapKey, image]) => [
+      mapKey,
+      createLayeredImageData(image, width, height)
+    ])
+  ) as LayeredMaterialMapSources;
+}
+
+function hasLayeredMaterialMapSources(
+  materialMaps?: LayeredMaterialMapSources
+) {
+  return Boolean(materialMaps && Object.values(materialMaps).some(Boolean));
+}
+
+function setCachedLayeredMaterialMaps(cacheKey: string, maps: LayeredMaterialMaps) {
+  if (layeredMaterialMapCache.size >= maxLayeredMaterialMapCacheEntries) {
+    const firstKey = layeredMaterialMapCache.keys().next().value;
+    if (firstKey) layeredMaterialMapCache.delete(firstKey);
+  }
+
+  layeredMaterialMapCache.set(cacheKey, maps);
+}
+
+function createMapBrightnessValues(mapData?: ImageData) {
+  if (!mapData) return undefined;
+
+  const pixelCount = mapData.width * mapData.height;
+  const values = new Uint8ClampedArray(pixelCount);
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+    const index = pixelIndex * 4;
+    const alpha = mapData.data[index + 3] / 255;
+    const brightness =
+      (mapData.data[index] * 0.2126 +
+        mapData.data[index + 1] * 0.7152 +
+        mapData.data[index + 2] * 0.0722) /
+      255;
+    values[pixelIndex] = encodeUnitMapValue(brightness * alpha);
+  }
+
+  return values;
+}
+
+function getMapBrightnessValue(
+  values: Uint8ClampedArray | undefined,
+  pixelIndex: number,
+  fallback: number
+) {
+  return values ? values[pixelIndex] / 255 : fallback;
+}
+
+function getMapBrightnessValueAt(
+  values: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number
+) {
+  const sampleX = Math.round(clamp(x, 0, width - 1));
+  const sampleY = Math.round(clamp(y, 0, height - 1));
+  return values[sampleY * width + sampleX] / 255;
 }
 
 function createLayeredMaterialMaps(params: {
   finish: ProductFinishOption;
   finishData: ImageData;
   profile: LayeredMaterialProfile;
+  materialMaps?: LayeredMaterialMapSources;
 }): LayeredMaterialMaps {
-  const { finish, finishData, profile } = params;
+  const { finish, finishData, profile, materialMaps } = params;
   const { width, height } = finishData;
   const pixelCount = width * height;
   const shadowMap = new Uint8ClampedArray(pixelCount);
@@ -1163,6 +1255,16 @@ function createLayeredMaterialMaps(params: {
   const textureMap = new Uint8ClampedArray(pixelCount);
   const specularMap = new Uint8ClampedArray(pixelCount);
   const sampleRadius = finish === "glossy" ? 3 : 2;
+  const usesManualMaps = hasLayeredMaterialMapSources(materialMaps);
+  const manualShadowValues = usesManualMaps ? createMapBrightnessValues(materialMaps?.shadow) : undefined;
+  const manualHighlightValues = usesManualMaps
+    ? createMapBrightnessValues(materialMaps?.highlight)
+    : undefined;
+  const manualTextureValues = usesManualMaps ? createMapBrightnessValues(materialMaps?.texture) : undefined;
+  const manualSpecularValues = usesManualMaps
+    ? createMapBrightnessValues(materialMaps?.specular)
+    : undefined;
+  const manualEdgeAoValues = usesManualMaps ? createMapBrightnessValues(materialMaps?.edgeAo) : undefined;
 
   for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
     const index = pixelIndex * 4;
@@ -1180,29 +1282,91 @@ function createLayeredMaterialMaps(params: {
         getPixelBrightness(finishData.data, width, height, pixelX, pixelY - sampleRadius) +
         getPixelBrightness(finishData.data, width, height, pixelX, pixelY + sampleRadius)) /
       6;
-    const microDetail = clamp(
-      (sourceBrightness - neighborAverage) * profile.microDetailStrength,
-      -profile.microDetailClamp,
-      profile.microDetailClamp
-    );
     const tonalBrightness = clamp(
       profile.tonalAnchor + (sourceBrightness - profile.tonalAnchor) * profile.tonalContrast,
       0,
       1
     );
-    const shadow = 1 - smoothstep(profile.shadowStart, profile.shadowEnd, tonalBrightness);
-    const highlight = smoothstep(profile.highlightStart, profile.highlightEnd, sourceBrightness);
-    const shade = clamp(
+    let shadow = 1 - smoothstep(profile.shadowStart, profile.shadowEnd, tonalBrightness);
+    let highlight = smoothstep(profile.highlightStart, profile.highlightEnd, sourceBrightness);
+    let microDetail = clamp(
+      (sourceBrightness - neighborAverage) * profile.microDetailStrength,
+      -profile.microDetailClamp,
+      profile.microDetailClamp
+    );
+    let shade = clamp(
       profile.shadeBase +
         Math.pow(tonalBrightness, profile.shadeGamma) * profile.shadeRange -
         shadow * profile.shadowStrength,
       profile.minShade,
       profile.maxShade
     );
-    const specular =
+    let specular =
       Math.pow(highlight, profile.highlightPower) *
       profile.highlightStrength *
       (1 - shadow * 0.58);
+
+    if (usesManualMaps) {
+      const isWhiteProfile = profile.minShade >= 0.55;
+      const manualShadow = manualShadowValues
+        ? smoothstep(0.06, 0.84, getMapBrightnessValue(manualShadowValues, pixelIndex, 0))
+        : shadow;
+      const manualEdgeAo = manualEdgeAoValues
+        ? smoothstep(0.12, 0.72, getMapBrightnessValue(manualEdgeAoValues, pixelIndex, 0))
+        : 0;
+      const manualHighlight = manualHighlightValues
+        ? smoothstep(0.55, 0.98, getMapBrightnessValue(manualHighlightValues, pixelIndex, 0))
+        : highlight;
+
+      if (manualTextureValues) {
+        const textureBrightness = getMapBrightnessValue(manualTextureValues, pixelIndex, 0.5);
+        const textureAverage =
+          (textureBrightness * 2 +
+            getMapBrightnessValueAt(manualTextureValues, width, height, pixelX - sampleRadius, pixelY) +
+            getMapBrightnessValueAt(manualTextureValues, width, height, pixelX + sampleRadius, pixelY) +
+            getMapBrightnessValueAt(manualTextureValues, width, height, pixelX, pixelY - sampleRadius) +
+            getMapBrightnessValueAt(manualTextureValues, width, height, pixelX, pixelY + sampleRadius)) /
+          6;
+        microDetail = clamp(
+          (textureBrightness - textureAverage) * profile.microDetailStrength * 1.4,
+          -profile.microDetailClamp,
+          profile.microDetailClamp
+        );
+      }
+
+      const shadeCeiling = isWhiteProfile ? Math.min(profile.maxShade, 1.04) : profile.maxShade;
+      const shadowImpact = isWhiteProfile ? 0.32 : finish === "glossy" ? 0.56 : 0.48;
+      const edgeImpact = isWhiteProfile ? 0.12 : 0.18;
+      const highlightLift = isWhiteProfile ? 0.08 : 0.05;
+      shade = clamp(
+        shadeCeiling -
+          manualShadow * shadowImpact -
+          manualEdgeAo * edgeImpact +
+          manualHighlight * highlightLift,
+        profile.minShade,
+        profile.maxShade
+      );
+
+      if (manualSpecularValues) {
+        const manualSpecular = smoothstep(
+          0.08,
+          0.96,
+          getMapBrightnessValue(manualSpecularValues, pixelIndex, 0)
+        );
+        specular =
+          Math.pow(manualSpecular, 1.12) *
+          profile.highlightStrength *
+          (finish === "glossy" ? 1.85 : 1.25);
+      }
+
+      specular = clamp(
+        specular + manualHighlight * profile.highlightStrength * (isWhiteProfile ? 0.32 : 0.24),
+        0,
+        isWhiteProfile ? 0.26 : 0.34
+      );
+      shadow = manualShadow;
+      highlight = manualHighlight;
+    }
 
     shadowMap[pixelIndex] = encodeShadeMapValue(shade, profile);
     highlightMap[pixelIndex] = encodeUnitMapValue(highlight);
@@ -1412,10 +1576,13 @@ async function renderLayeredProductMockup(params: {
   }
 
   const partMaskEntries = Object.entries(layeredRender?.partMasks || {});
+  const materialMapEntries = Object.entries(layeredRender?.materialMaps || {}) as Array<
+    [ProductFinishOption, Record<string, string>]
+  >;
   const needsInstructionMaskFallback = params.selectedPartPantones.some(
     (selection) => !layeredRender?.partMasks?.[selection.partId]
   );
-  const [finishPairs, maskPairs] = await Promise.all([
+  const [finishPairs, maskPairs, materialMapPairs] = await Promise.all([
     Promise.all(
       finishEntries.map(async ([finish, assetUrl]) => [
         finish,
@@ -1427,11 +1594,27 @@ async function renderLayeredProductMockup(params: {
         partId,
         await loadImage(toAbsoluteAssetUrl(assetUrl))
       ] as const)
+    ),
+    Promise.all(
+      materialMapEntries.map(async ([finish, mapSet]) => [
+        finish,
+        Object.fromEntries(
+          await Promise.all(
+            Object.entries(mapSet).map(async ([mapKey, assetUrl]) => [
+              mapKey,
+              await loadImage(toAbsoluteAssetUrl(assetUrl))
+            ] as const)
+          )
+        ) as LayeredMaterialMapImages
+      ] as const)
     )
   ]);
 
   const finishImages = Object.fromEntries(finishPairs) as LayeredRenderImages;
   const maskImages = Object.fromEntries(maskPairs) as Record<string, HTMLImageElement>;
+  const materialMapImages = Object.fromEntries(
+    materialMapPairs
+  ) as LayeredMaterialMapImagesByFinish;
   const instructionMaskImage = needsInstructionMaskFallback
     ? await loadImage(toAbsoluteAssetUrl(params.template.instructionImageUrl))
     : null;
@@ -1452,13 +1635,27 @@ async function renderLayeredProductMockup(params: {
   if (!fallbackSource) {
     throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish source is missing.");
   }
+  const materialMapSources = Object.fromEntries(
+    Object.entries(materialMapImages).map(([finish, mapImages]) => [
+      finish,
+      createLayeredMaterialMapSources(mapImages, width, height)
+    ])
+  ) as LayeredMaterialMapSourcesByFinish;
+  const materialMapSignatures = Object.fromEntries(
+    Object.entries(layeredRender?.materialMaps || {}).map(([finish, mapSet]) => [
+      finish,
+      Object.entries(mapSet)
+        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+        .map(([mapKey, assetUrl]) => `${mapKey}:${assetUrl}`)
+        .join(";")
+    ])
+  ) as Partial<Record<ProductFinishOption, string>>;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = getCanvasContext(canvas);
   context.drawImage(fallbackImage, 0, 0, width, height);
-  const materialMapCache = new Map<string, LayeredMaterialMaps>();
 
   function getMaterialMapsFor(params: {
     finish: ProductFinishOption;
@@ -1467,23 +1664,42 @@ async function renderLayeredProductMockup(params: {
     isWhiteTint: boolean;
     highlightProtection: number;
     textureStrength: number;
+    manualMapSources?: LayeredMaterialMapSources;
+    sourceSignature: string;
+    manualMapSignature?: string;
   }) {
-    const { finish, finishSource, profile, isWhiteTint, highlightProtection, textureStrength } = params;
+    const {
+      finish,
+      finishSource,
+      profile,
+      isWhiteTint,
+      highlightProtection,
+      textureStrength,
+      manualMapSources,
+      sourceSignature,
+      manualMapSignature
+    } = params;
     const cacheKey = [
       finish,
+      width,
+      height,
+      sourceSignature,
+      manualMapSignature || "no-manual-map",
+      hasLayeredMaterialMapSources(manualMapSources) ? "manual" : "auto",
       isWhiteTint ? "white" : "color",
       highlightProtection.toFixed(3),
       textureStrength.toFixed(3)
     ].join("|");
-    const cachedMaps = materialMapCache.get(cacheKey);
+    const cachedMaps = layeredMaterialMapCache.get(cacheKey);
     if (cachedMaps) return cachedMaps;
 
     const maps = createLayeredMaterialMaps({
       finish,
       finishData: finishSource.imageData,
-      profile
+      profile,
+      materialMaps: manualMapSources
     });
-    materialMapCache.set(cacheKey, maps);
+    setCachedLayeredMaterialMaps(cacheKey, maps);
     return maps;
   }
 
@@ -1518,7 +1734,10 @@ async function renderLayeredProductMockup(params: {
       profile,
       isWhiteTint,
       highlightProtection,
-      textureStrength
+      textureStrength,
+      manualMapSources: materialMapSources[finish],
+      sourceSignature: finishBaseImages[finish] || fallbackFinishUrl,
+      manualMapSignature: materialMapSignatures[finish]
     });
     const partCanvas = createLayeredPartCanvas({
       width,

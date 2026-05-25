@@ -9,6 +9,7 @@ import {
 } from "@/lib/services/finish-option.service";
 import { loadTemplate, toTemplatePublicDto } from "@/lib/services/template.service";
 import type {
+  LayeredMaterialMapKey,
   LayeredRenderConfig,
   LayeredRenderFinishRule,
   LogoOrientationPreset,
@@ -32,6 +33,15 @@ const defaultPrintingMethods = [
   "embroidery",
   "laser_engraving",
   "mirror_laser_engraving"
+];
+
+const layeredMaterialMapKeys: LayeredMaterialMapKey[] = [
+  "base",
+  "shadow",
+  "highlight",
+  "texture",
+  "specular",
+  "edgeAo"
 ];
 
 const defaultLayeredFinishRules: Record<ProductFinishOption, LayeredRenderFinishRule> = {
@@ -81,6 +91,7 @@ type LayeredRenderFormPayload = {
   };
   fallbackFinish?: unknown;
   finishBaseImages?: Partial<Record<ProductFinishOption, unknown>>;
+  materialMaps?: Partial<Record<ProductFinishOption, Partial<Record<LayeredMaterialMapKey, unknown>>>>;
   partMasks?: Record<string, unknown>;
   finishRules?: Partial<Record<ProductFinishOption, Partial<LayeredRenderFinishRule>>>;
 };
@@ -573,6 +584,34 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
       }
     }
 
+    const materialMaps: NonNullable<LayeredRenderConfig["materialMaps"]> = {};
+    const rawMaterialMaps = layeredRenderForm.materialMaps || {};
+    for (const finish of productFinishOptions) {
+      const existingMapSet = existingTemplate?.layeredRender?.materialMaps?.[finish] || {};
+      const requestedMapSet = rawMaterialMaps[finish] || {};
+      const normalizedMapSet: NonNullable<LayeredRenderConfig["materialMaps"]>[ProductFinishOption] = {};
+
+      for (const mapKey of layeredMaterialMapKeys) {
+        const existingMapAsset = normalizeTemplateAssetReference(
+          assetFolderPublicPath,
+          existingMapSet[mapKey],
+          `${finish} ${mapKey} material map`
+        );
+        const requestedMapAsset = normalizeTemplateAssetReference(
+          assetFolderPublicPath,
+          requestedMapSet[mapKey],
+          `${finish} ${mapKey} material map`
+        );
+
+        if (existingMapAsset) normalizedMapSet[mapKey] = existingMapAsset;
+        if (requestedMapAsset) normalizedMapSet[mapKey] = requestedMapAsset;
+      }
+
+      if (Object.keys(normalizedMapSet).length) {
+        materialMaps[finish] = normalizedMapSet;
+      }
+    }
+
     const fallbackFinish =
       normalizeProductFinishOption(layeredRenderForm.fallbackFinish) ||
       existingTemplate?.layeredRender?.fallbackFinish ||
@@ -637,6 +676,7 @@ export async function saveTemplateFromFormData(formData: FormData): Promise<Temp
       ...(outputSize ? { outputSize } : {}),
       fallbackFinish: availableFallbackFinish,
       finishBaseImages,
+      ...(Object.keys(materialMaps).length ? { materialMaps } : {}),
       partMasks,
       finishRules
     };

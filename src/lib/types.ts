@@ -20,6 +20,16 @@ export interface LayeredRenderFinishRule {
   saturationBoost?: number;
 }
 
+export type LayeredMaterialMapKey =
+  | "base"
+  | "shadow"
+  | "highlight"
+  | "texture"
+  | "specular"
+  | "edgeAo";
+
+export type LayeredMaterialMapSet = Partial<Record<LayeredMaterialMapKey, string>>;
+
 export interface LayeredRenderConfig {
   enabled: boolean;
   mode: "local-layered";
@@ -29,6 +39,7 @@ export interface LayeredRenderConfig {
   };
   fallbackFinish: ProductFinishOption;
   finishBaseImages: Partial<Record<ProductFinishOption, string>>;
+  materialMaps?: Partial<Record<ProductFinishOption, LayeredMaterialMapSet>>;
   partMasks: Record<string, string>;
   finishRules?: Partial<Record<ProductFinishOption, LayeredRenderFinishRule>>;
 }
