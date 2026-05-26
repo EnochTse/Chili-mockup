@@ -1541,13 +1541,27 @@ function composeLayeredMaterialColor(params: {
     const albedoLuminance = getRelativeLuminanceLinear(albedoLinear);
     const darkTintVisibility = 1 - smoothstep(0.025, 0.16, albedoLuminance);
     const diffuseBloom = highlightedPixel * (0.032 + darkTintVisibility * 0.038);
-    const matteShade = clamp(detailShade + diffuseBloom, profile.minShade, profile.maxShade);
+    const highlightTexturePreservation =
+      highlightedPixel *
+      clamp(Math.abs(microDetail) * 1.85 + specularAmount * 0.08, 0, 0.03);
+    const highlightDetailRebound = microDetail * highlightedPixel * 0.22;
+    const matteShade = clamp(
+      detailShade + diffuseBloom - highlightTexturePreservation + highlightDetailRebound,
+      profile.minShade,
+      profile.maxShade
+    );
     const matteAlbedo = {
       r: clamp(albedoLinear.r * matteShade, 0, 1),
       g: clamp(albedoLinear.g * matteShade, 0, 1),
       b: clamp(albedoLinear.b * matteShade, 0, 1)
     };
-    const sheenLift = specularAmount * (0.42 + highlightedPixel * 0.14);
+    const sheenDetailDampening = clamp(
+      highlightedPixel * 0.1 + Math.abs(microDetail) * 1.4,
+      0,
+      0.16
+    );
+    const sheenLift =
+      specularAmount * (0.4 + highlightedPixel * 0.12) * (1 - sheenDetailDampening);
     const formVisibilityLift =
       darkTintVisibility * (0.012 + smoothstep(profile.minShade, profile.maxShade, detailShade) * 0.028);
     const textureVisibilityLift =
