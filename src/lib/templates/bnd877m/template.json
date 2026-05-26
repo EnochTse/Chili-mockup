@@ -118,9 +118,9 @@
       "matte": {
         "colorOpacity": 0.98,
         "blendMode": "source-over",
-        "highlightProtection": 0.14,
-        "textureStrength": 0.18,
-        "saturationBoost": 0.05
+        "highlightProtection": 0.18,
+        "textureStrength": 0.16,
+        "saturationBoost": 0.06
       },
       "glossy": {
         "colorOpacity": 0.97,
