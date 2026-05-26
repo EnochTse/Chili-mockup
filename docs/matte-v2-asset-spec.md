@@ -13,7 +13,7 @@ Matte V2 treats matte as a separate material model, not as a weakened glossy ren
 ## Required Files
 
 - `matte_base.png`: Neutral clean product base. Keep only minimal diffuse form readability. Avoid baked shadows, strong highlights, visible gray fog, color tint, dirt, scratches, or dramatic contrast.
-- `matte_form_shadow.png`: Broad form shadow only. Black means no shadow, white means strongest darkening. Include cylindrical falloff and large surface curvature. Avoid seams, texture grain, and highlights.
+- `matte_form_shadow.png`: Broad visual form shading only. Dark pixels mean shadowed surface, bright pixels mean lit surface. Include cylindrical falloff and large surface curvature. Avoid seams, texture grain, and hard highlights.
 - `matte_edge_ao.png`: Tight ambient occlusion only. Black means no edge darkening, white means strongest contact darkening. Include seams, part breaks, handle contact, cap/body separation, and small underside occlusion.
 - `matte_soft_light.png`: Broad diffuse light only. Black means no light, white means strongest matte light. Keep it wide and soft. Avoid sharp glossy streaks.
 - `matte_micrograin.png`: Low-contrast matte micro texture. Product area should sit around 50% gray. Small deviations create fine grain. Avoid visible scratches, dust, stains, cloudy patches, or large gradients.
@@ -32,7 +32,7 @@ Matte V2 treats matte as a separate material model, not as a weakened glossy ren
 ## Brightness Targets
 
 - `matte_base.png`: product average should stay visually neutral, not washed out or smoky.
-- `matte_form_shadow.png`: broad shadows should usually stay below 70% brightness except the deepest areas.
+- `matte_form_shadow.png`: broad lit areas should be brighter and broad shadow areas should be darker. Avoid x-ray style inversion where light-facing surfaces are dark and shadow-facing surfaces are bright.
 - `matte_edge_ao.png`: edge lines can be bright, but broad regions should remain mostly black.
 - `matte_soft_light.png`: light should be soft and controlled; avoid large pure-white areas.
 - `matte_micrograin.png`: product area should stay near 50% gray with very low contrast.
@@ -57,6 +57,7 @@ Keep the canvas size, product position, crop, scale, silhouette, perspective, an
 - Part masks are generated from a different crop or canvas.
 - Black matte is rendered as solid black because the material model has no visible low-reflectance light response.
 - Matte is too flat because soft light overpowers form shadow and micrograin.
+- Form shadow looks like an x-ray because the renderer and asset disagree on shadow polarity.
 
 ## Rollout Plan
 

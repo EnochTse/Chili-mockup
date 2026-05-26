@@ -1399,12 +1399,11 @@ function createLayeredMaterialMaps(params: {
 
     if (usesManualMaps) {
       const isWhiteProfile = profile.minShade >= 0.55;
+      const manualShadowBrightness = getMapBrightnessValue(manualShadowValues, pixelIndex, 0);
       const manualShadow = manualShadowValues
-        ? smoothstep(
-            isMatteFinish ? 0.08 : 0.06,
-            isMatteFinish ? 0.78 : 0.84,
-            getMapBrightnessValue(manualShadowValues, pixelIndex, 0)
-          )
+        ? isMatteFinish
+          ? smoothstep(0.12, 0.86, 1 - manualShadowBrightness)
+          : smoothstep(0.06, 0.84, manualShadowBrightness)
         : shadow;
       const manualEdgeAo = manualEdgeAoValues
         ? smoothstep(
