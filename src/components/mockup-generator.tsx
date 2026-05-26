@@ -1548,29 +1548,39 @@ function composeLayeredMaterialColor(params: {
       b: clamp(albedoLinear.b * matteShade, 0, 1)
     };
     const sheenLift = specularAmount * (0.42 + highlightedPixel * 0.14);
+    const formVisibilityLift =
+      darkTintVisibility * (0.012 + smoothstep(profile.minShade, profile.maxShade, detailShade) * 0.028);
+    const textureVisibilityLift =
+      darkTintVisibility *
+      clamp(
+        Math.abs(microDetail) * 1.75 + highlightedPixel * 0.02 + specularAmount * 0.08,
+        0,
+        0.032
+      );
     const darkLightLift =
       darkTintVisibility *
-      (highlightedPixel * 0.07 + specularAmount * 0.6 + Math.max(microDetail, 0) * 0.42);
+      (highlightedPixel * 0.07 + specularAmount * 0.6 + Math.max(microDetail, 0) * 0.36);
     const matteReflectanceColor = mixLinearColor(albedoLinear, { r: 0.2, g: 0.2, b: 0.2 }, 0.42);
+    const totalReflectanceLift = darkLightLift + formVisibilityLift + textureVisibilityLift;
 
     return {
       r: clamp(
         matteAlbedo.r +
-          matteReflectanceColor.r * darkLightLift +
+          matteReflectanceColor.r * totalReflectanceLift +
           (1 - matteAlbedo.r) * sheenLift,
         0,
         1
       ),
       g: clamp(
         matteAlbedo.g +
-          matteReflectanceColor.g * darkLightLift +
+          matteReflectanceColor.g * totalReflectanceLift +
           (1 - matteAlbedo.g) * sheenLift,
         0,
         1
       ),
       b: clamp(
         matteAlbedo.b +
-          matteReflectanceColor.b * darkLightLift +
+          matteReflectanceColor.b * totalReflectanceLift +
           (1 - matteAlbedo.b) * sheenLift,
         0,
         1
