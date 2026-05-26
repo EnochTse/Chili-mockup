@@ -1397,10 +1397,21 @@ function createLayeredMaterialMaps(params: {
         );
       }
 
-      const shadeCeiling = isWhiteProfile ? Math.min(profile.maxShade, 1.04) : profile.maxShade;
-      const shadowImpact = isWhiteProfile ? 0.32 : finish === "glossy" ? 0.56 : 0.48;
-      const edgeImpact = isWhiteProfile ? 0.12 : 0.18;
-      const highlightLift = isWhiteProfile ? 0.08 : 0.05;
+      const isMatteFinish = finish === "matte";
+      const shadeCeiling = isWhiteProfile
+        ? Math.min(profile.maxShade, 1.04)
+        : isMatteFinish
+          ? Math.min(profile.maxShade, 1.08)
+          : profile.maxShade;
+      const shadowImpact = isWhiteProfile
+        ? 0.32
+        : finish === "glossy"
+          ? 0.56
+          : isMatteFinish
+            ? 0.54
+            : 0.48;
+      const edgeImpact = isWhiteProfile ? 0.12 : isMatteFinish ? 0.24 : 0.18;
+      const highlightLift = isWhiteProfile ? 0.08 : isMatteFinish ? 0.025 : 0.05;
       shade = clamp(
         shadeCeiling -
           manualShadow * shadowImpact -
@@ -1419,13 +1430,16 @@ function createLayeredMaterialMaps(params: {
         specular =
           Math.pow(manualSpecular, 1.12) *
           profile.highlightStrength *
-          (finish === "glossy" ? 1.85 : 1.25);
+          (finish === "glossy" ? 1.85 : isMatteFinish ? 0.72 : 1.25);
       }
 
       specular = clamp(
-        specular + manualHighlight * profile.highlightStrength * (isWhiteProfile ? 0.32 : 0.24),
+        specular +
+          manualHighlight *
+            profile.highlightStrength *
+            (isWhiteProfile ? 0.32 : isMatteFinish ? 0.1 : 0.24),
         0,
-        isWhiteProfile ? 0.26 : 0.34
+        isWhiteProfile ? 0.26 : isMatteFinish ? 0.14 : 0.34
       );
       shadow = manualShadow;
       highlight = manualHighlight;
