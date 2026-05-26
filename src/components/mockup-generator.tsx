@@ -453,6 +453,69 @@ function createLogoArtworkCanvas(logoImage: HTMLImageElement, inkColor: Rgb | nu
   return logoCanvas;
 }
 
+function sampleImageAlpha(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number
+) {
+  const sampleX = Math.round(clamp(x, 0, width - 1));
+  const sampleY = Math.round(clamp(y, 0, height - 1));
+  return data[(sampleY * width + sampleX) * 4 + 3] / 255;
+}
+
+function proceduralNoise(x: number, y: number) {
+  const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+  return value - Math.floor(value);
+}
+
+function createMirrorLaserEffectCanvas(logoCanvas: HTMLCanvasElement) {
+  const sourceContext = getCanvasContext(logoCanvas);
+  const sourceData = sourceContext.getImageData(0, 0, logoCanvas.width, logoCanvas.height);
+  const effectCanvas = document.createElement("canvas");
+  effectCanvas.width = logoCanvas.width;
+  effectCanvas.height = logoCanvas.height;
+  const effectContext = getCanvasContext(effectCanvas);
+  const effectData = effectContext.createImageData(logoCanvas.width, logoCanvas.height);
+
+  for (let y = 0; y < logoCanvas.height; y += 1) {
+    const rowNoise = proceduralNoise(19.7, y * 0.91);
+    const brushedLine = Math.sin(y * 0.34 + rowNoise * Math.PI * 2) * 0.035;
+
+    for (let x = 0; x < logoCanvas.width; x += 1) {
+      const pixelIndex = y * logoCanvas.width + x;
+      const dataIndex = pixelIndex * 4;
+      const alpha = sourceData.data[dataIndex + 3] / 255;
+      if (alpha <= 0) continue;
+
+      const left = sampleImageAlpha(sourceData.data, logoCanvas.width, logoCanvas.height, x - 1, y);
+      const right = sampleImageAlpha(sourceData.data, logoCanvas.width, logoCanvas.height, x + 1, y);
+      const up = sampleImageAlpha(sourceData.data, logoCanvas.width, logoCanvas.height, x, y - 1);
+      const down = sampleImageAlpha(sourceData.data, logoCanvas.width, logoCanvas.height, x, y + 1);
+      const gradientX = right - left;
+      const gradientY = down - up;
+      const edgeStrength = clamp((Math.abs(gradientX) + Math.abs(gradientY)) * 1.45, 0, 1);
+      const bevelLight = clamp(0.5 + (-gradientX * 0.72 - gradientY * 0.56) * 0.9, 0, 1);
+      const grainNoise = proceduralNoise(x * 1.17 + 9.1, y * 1.11 + 3.7);
+      const grain = (grainNoise - 0.5) * 0.05;
+      const metalBody = 0.69 + (rowNoise - 0.5) * 0.1 + brushedLine + grain;
+      const edgeBevel = (bevelLight - 0.5) * edgeStrength * 0.52;
+      const innerRecess = (1 - edgeStrength) * 0.07;
+      const brightness = clamp(metalBody + edgeBevel - innerRecess, 0.18, 0.98);
+      const coolTint = 1 + edgeStrength * 0.03;
+
+      effectData.data[dataIndex] = Math.round(clamp(brightness * 246, 0, 255));
+      effectData.data[dataIndex + 1] = Math.round(clamp(brightness * 249, 0, 255));
+      effectData.data[dataIndex + 2] = Math.round(clamp(brightness * 252 * coolTint, 0, 255));
+      effectData.data[dataIndex + 3] = Math.round(alpha * 255);
+    }
+  }
+
+  effectContext.putImageData(effectData, 0, 0);
+  return effectCanvas;
+}
+
 function detectGreenLogoArea(instructionImage: HTMLImageElement) {
   const canvas = document.createElement("canvas");
   canvas.width = instructionImage.naturalWidth || instructionImage.width;
@@ -692,6 +755,10 @@ function resolveLogoInkColor(params: {
 }
 
 function makeLogoEffectCanvas(logoCanvas: HTMLCanvasElement, printingMethod: string) {
+  if (printingMethod === "mirror_laser_engraving") {
+    return createMirrorLaserEffectCanvas(logoCanvas);
+  }
+
   const effectCanvas = document.createElement("canvas");
   effectCanvas.width = logoCanvas.width;
   effectCanvas.height = logoCanvas.height;
@@ -722,60 +789,6 @@ function makeLogoEffectCanvas(logoCanvas: HTMLCanvasElement, printingMethod: str
     gradient.addColorStop(0.45, "rgba(255,255,255,0)");
     context.fillStyle = gradient;
     context.fillRect(0, 0, logoCanvas.width, logoCanvas.height);
-    context.restore();
-  }
-
-  if (printingMethod === "mirror_laser_engraving") {
-    context.save();
-    context.globalCompositeOperation = "source-atop";
-    const metallicGradient = context.createLinearGradient(0, 0, logoCanvas.width, logoCanvas.height);
-    metallicGradient.addColorStop(0, "#08090a");
-    metallicGradient.addColorStop(0.1, "#3e4146");
-    metallicGradient.addColorStop(0.23, "#f7f8fa");
-    metallicGradient.addColorStop(0.38, "#777b82");
-    metallicGradient.addColorStop(0.5, "#ffffff");
-    metallicGradient.addColorStop(0.64, "#5d6168");
-    metallicGradient.addColorStop(0.82, "#f1f3f5");
-    metallicGradient.addColorStop(1, "#111214");
-    context.fillStyle = metallicGradient;
-    context.fillRect(0, 0, logoCanvas.width, logoCanvas.height);
-    context.restore();
-
-    context.save();
-    context.globalCompositeOperation = "source-atop";
-    context.globalAlpha = 0.5;
-    const shineWidth = Math.max(6, Math.round(logoCanvas.width * 0.16));
-    const shineGradient = context.createLinearGradient(
-      logoCanvas.width * 0.15,
-      0,
-      logoCanvas.width * 0.15 + shineWidth,
-      0
-    );
-    shineGradient.addColorStop(0, "rgba(255,255,255,0)");
-    shineGradient.addColorStop(0.5, "rgba(255,255,255,1)");
-    shineGradient.addColorStop(1, "rgba(255,255,255,0)");
-    context.translate(logoCanvas.width * 0.04, 0);
-    context.rotate((-18 * Math.PI) / 180);
-    context.fillStyle = shineGradient;
-    context.fillRect(
-      0,
-      -logoCanvas.height * 0.15,
-      logoCanvas.width,
-      logoCanvas.height * 1.35
-    );
-    context.restore();
-
-    context.save();
-    context.globalCompositeOperation = "source-atop";
-    context.globalAlpha = 0.18;
-    context.strokeStyle = "#ffffff";
-    context.lineWidth = Math.max(0.5, logoCanvas.height / 180);
-    for (let y = -logoCanvas.height; y < logoCanvas.height * 2; y += Math.max(2, logoCanvas.height / 34)) {
-      context.beginPath();
-      context.moveTo(-logoCanvas.width * 0.2, y);
-      context.lineTo(logoCanvas.width * 1.2, y + logoCanvas.height * 0.32);
-      context.stroke();
-    }
     context.restore();
   }
 
@@ -815,10 +828,10 @@ function drawLogoWithPrintEffect(params: {
     const bevelOffset = Math.max(0.6, Math.min(rect.width, rect.height) * 0.012);
 
     context.globalCompositeOperation = "multiply";
-    context.globalAlpha = 0.32;
+    context.globalAlpha = 0.2;
     context.filter = `blur(${Math.max(0.4, bevelOffset * 0.55)}px)`;
     context.drawImage(
-      effectCanvas,
+      logoCanvas,
       -rect.width / 2 + bevelOffset,
       -rect.height / 2 + bevelOffset,
       rect.width,
@@ -827,20 +840,25 @@ function drawLogoWithPrintEffect(params: {
 
     context.filter = "none";
     context.globalCompositeOperation = "screen";
+    context.globalAlpha = 0.24;
+    context.drawImage(
+      logoCanvas,
+      -rect.width / 2 - bevelOffset * 0.28,
+      -rect.height / 2 - bevelOffset * 0.38,
+      rect.width,
+      rect.height
+    );
+
+    context.globalCompositeOperation = "source-over";
     context.globalAlpha = 0.94;
-    context.shadowColor = "rgba(255,255,255,0.55)";
-    context.shadowBlur = Math.max(1, bevelOffset * 1.4);
-    context.shadowOffsetX = -bevelOffset * 0.35;
-    context.shadowOffsetY = -bevelOffset * 0.5;
     context.drawImage(effectCanvas, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
 
-    context.shadowColor = "transparent";
     context.globalCompositeOperation = "overlay";
-    context.globalAlpha = 0.5;
+    context.globalAlpha = 0.2;
     context.drawImage(
       effectCanvas,
-      -rect.width / 2 - bevelOffset * 0.45,
-      -rect.height / 2 - bevelOffset * 0.55,
+      -rect.width / 2 - bevelOffset * 0.18,
+      -rect.height / 2 - bevelOffset * 0.24,
       rect.width,
       rect.height
     );
@@ -1029,6 +1047,14 @@ type LayeredMaterialProfile = {
   highlightStrength: number;
   microDetailStrength: number;
   microDetailClamp: number;
+};
+
+type MatteSoftLightResponse = {
+  matteShade: number;
+  sheenLift: number;
+  formVisibilityLift: number;
+  textureVisibilityLift: number;
+  reflectanceLift: number;
 };
 
 function getLayeredMaterialProfile(params: {
@@ -1515,6 +1541,47 @@ function createLayeredMaterialMaps(params: {
   };
 }
 
+function getMatteSoftLightResponse(params: {
+  detailShade: number;
+  highlightedPixel: number;
+  microDetail: number;
+  specularAmount: number;
+  darkTintVisibility: number;
+  profile: LayeredMaterialProfile;
+}): MatteSoftLightResponse {
+  const { detailShade, highlightedPixel, microDetail, specularAmount, darkTintVisibility, profile } = params;
+  const softLightAmount = smoothstep(0.08, 0.92, highlightedPixel);
+  const matteVisibility = 0.28 + darkTintVisibility * 0.72;
+  const softLightBloom = softLightAmount * (0.024 + darkTintVisibility * 0.028);
+  const softLightCompression =
+    softLightAmount * clamp(Math.abs(microDetail) * 1.6 + specularAmount * 0.08, 0, 0.028);
+  const softLightDetailRebound = microDetail * softLightAmount * 0.2;
+  const matteShade = clamp(
+    detailShade + softLightBloom - softLightCompression + softLightDetailRebound,
+    profile.minShade,
+    profile.maxShade
+  );
+  const sheenDetailDampening = clamp(softLightAmount * 0.08 + Math.abs(microDetail) * 1.3, 0, 0.15);
+  const sheenLift =
+    specularAmount * (0.38 + softLightAmount * 0.12) * (1 - sheenDetailDampening);
+  const formVisibilityLift =
+    matteVisibility * (0.008 + smoothstep(profile.minShade, profile.maxShade, matteShade) * 0.024);
+  const textureVisibilityLift =
+    matteVisibility *
+    clamp(Math.abs(microDetail) * 1.55 + softLightAmount * 0.018 + specularAmount * 0.05, 0, 0.028);
+  const reflectanceLift =
+    matteVisibility * (softLightAmount * 0.028 + specularAmount * 0.09) +
+    darkTintVisibility * Math.max(microDetail, 0) * 0.28;
+
+  return {
+    matteShade,
+    sheenLift,
+    formVisibilityLift,
+    textureVisibilityLift,
+    reflectanceLift
+  };
+}
+
 function composeLayeredMaterialColor(params: {
   finish: ProductFinishOption;
   albedoLinear: LinearRgb;
@@ -1540,62 +1607,44 @@ function composeLayeredMaterialColor(params: {
   if (finish === "matte") {
     const albedoLuminance = getRelativeLuminanceLinear(albedoLinear);
     const darkTintVisibility = 1 - smoothstep(0.025, 0.16, albedoLuminance);
-    const diffuseBloom = highlightedPixel * (0.032 + darkTintVisibility * 0.038);
-    const highlightTexturePreservation =
-      highlightedPixel *
-      clamp(Math.abs(microDetail) * 1.85 + specularAmount * 0.08, 0, 0.03);
-    const highlightDetailRebound = microDetail * highlightedPixel * 0.22;
-    const matteShade = clamp(
-      detailShade + diffuseBloom - highlightTexturePreservation + highlightDetailRebound,
-      profile.minShade,
-      profile.maxShade
-    );
+    const softLightResponse = getMatteSoftLightResponse({
+      detailShade,
+      highlightedPixel,
+      microDetail,
+      specularAmount,
+      darkTintVisibility,
+      profile
+    });
     const matteAlbedo = {
-      r: clamp(albedoLinear.r * matteShade, 0, 1),
-      g: clamp(albedoLinear.g * matteShade, 0, 1),
-      b: clamp(albedoLinear.b * matteShade, 0, 1)
+      r: clamp(albedoLinear.r * softLightResponse.matteShade, 0, 1),
+      g: clamp(albedoLinear.g * softLightResponse.matteShade, 0, 1),
+      b: clamp(albedoLinear.b * softLightResponse.matteShade, 0, 1)
     };
-    const sheenDetailDampening = clamp(
-      highlightedPixel * 0.1 + Math.abs(microDetail) * 1.4,
-      0,
-      0.16
-    );
-    const sheenLift =
-      specularAmount * (0.4 + highlightedPixel * 0.12) * (1 - sheenDetailDampening);
-    const formVisibilityLift =
-      darkTintVisibility * (0.012 + smoothstep(profile.minShade, profile.maxShade, detailShade) * 0.028);
-    const textureVisibilityLift =
-      darkTintVisibility *
-      clamp(
-        Math.abs(microDetail) * 1.75 + highlightedPixel * 0.02 + specularAmount * 0.08,
-        0,
-        0.032
-      );
-    const darkLightLift =
-      darkTintVisibility *
-      (highlightedPixel * 0.07 + specularAmount * 0.6 + Math.max(microDetail, 0) * 0.36);
-    const matteReflectanceColor = mixLinearColor(albedoLinear, { r: 0.2, g: 0.2, b: 0.2 }, 0.42);
-    const totalReflectanceLift = darkLightLift + formVisibilityLift + textureVisibilityLift;
+    const matteReflectanceColor = mixLinearColor(albedoLinear, { r: 0.22, g: 0.22, b: 0.22 }, 0.4);
+    const totalReflectanceLift =
+      softLightResponse.reflectanceLift +
+      softLightResponse.formVisibilityLift +
+      softLightResponse.textureVisibilityLift;
 
     return {
       r: clamp(
         matteAlbedo.r +
           matteReflectanceColor.r * totalReflectanceLift +
-          (1 - matteAlbedo.r) * sheenLift,
+          (1 - matteAlbedo.r) * softLightResponse.sheenLift,
         0,
         1
       ),
       g: clamp(
         matteAlbedo.g +
           matteReflectanceColor.g * totalReflectanceLift +
-          (1 - matteAlbedo.g) * sheenLift,
+          (1 - matteAlbedo.g) * softLightResponse.sheenLift,
         0,
         1
       ),
       b: clamp(
         matteAlbedo.b +
           matteReflectanceColor.b * totalReflectanceLift +
-          (1 - matteAlbedo.b) * sheenLift,
+          (1 - matteAlbedo.b) * softLightResponse.sheenLift,
         0,
         1
       )
