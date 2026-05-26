@@ -55,6 +55,7 @@ Keep the canvas size, product position, crop, scale, silhouette, perspective, an
 - Micrograin map contains scratches or dirt, making products look damaged.
 - Edge AO contains broad shadows, making recolored products muddy.
 - Part masks are generated from a different crop or canvas.
+- Black matte is rendered as solid black because the material model has no visible low-reflectance light response.
 
 ## Rollout Plan
 

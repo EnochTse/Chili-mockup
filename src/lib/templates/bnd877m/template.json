@@ -116,10 +116,10 @@
     },
     "finishRules": {
       "matte": {
-        "colorOpacity": 0.99,
+        "colorOpacity": 0.98,
         "blendMode": "source-over",
-        "highlightProtection": 0.08,
-        "textureStrength": 0.1,
+        "highlightProtection": 0.16,
+        "textureStrength": 0.14,
         "saturationBoost": 0.05
       },
       "glossy": {
