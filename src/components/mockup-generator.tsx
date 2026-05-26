@@ -465,12 +465,50 @@ function sampleImageAlpha(
   return data[(sampleY * width + sampleX) * 4 + 3] / 255;
 }
 
+function sampleImageBrightness(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number
+) {
+  const sampleX = Math.round(clamp(x, 0, width - 1));
+  const sampleY = Math.round(clamp(y, 0, height - 1));
+  const index = (sampleY * width + sampleX) * 4;
+  return (data[index] * 0.2126 + data[index + 1] * 0.7152 + data[index + 2] * 0.0722) / 255;
+}
+
 function proceduralNoise(x: number, y: number) {
   const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
   return value - Math.floor(value);
 }
 
-function createMirrorLaserEffectCanvas(logoCanvas: HTMLCanvasElement) {
+function createSolidAlphaMaskCanvas(logoCanvas: HTMLCanvasElement, color: string) {
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = logoCanvas.width;
+  maskCanvas.height = logoCanvas.height;
+  const maskContext = getCanvasContext(maskCanvas);
+  maskContext.drawImage(logoCanvas, 0, 0);
+  maskContext.globalCompositeOperation = "source-in";
+  maskContext.fillStyle = color;
+  maskContext.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+  return maskCanvas;
+}
+
+function extractCanvasRegion(context: CanvasRenderingContext2D, rect: PixelRect) {
+  const startX = Math.max(0, Math.floor(rect.x));
+  const startY = Math.max(0, Math.floor(rect.y));
+  const endX = Math.min(context.canvas.width, Math.ceil(rect.x + rect.width));
+  const endY = Math.min(context.canvas.height, Math.ceil(rect.y + rect.height));
+  const width = Math.max(1, endX - startX);
+  const height = Math.max(1, endY - startY);
+  return context.getImageData(startX, startY, width, height);
+}
+
+function createMirrorLaserEffectCanvas(
+  logoCanvas: HTMLCanvasElement,
+  backdropImageData?: ImageData
+) {
   const sourceContext = getCanvasContext(logoCanvas);
   const sourceData = sourceContext.getImageData(0, 0, logoCanvas.width, logoCanvas.height);
   const effectCanvas = document.createElement("canvas");
@@ -481,7 +519,7 @@ function createMirrorLaserEffectCanvas(logoCanvas: HTMLCanvasElement) {
 
   for (let y = 0; y < logoCanvas.height; y += 1) {
     const rowNoise = proceduralNoise(19.7, y * 0.91);
-    const brushedLine = Math.sin(y * 0.34 + rowNoise * Math.PI * 2) * 0.035;
+    const brushedLine = Math.sin(y * 0.34 + rowNoise * Math.PI * 2) * 0.022;
 
     for (let x = 0; x < logoCanvas.width; x += 1) {
       const pixelIndex = y * logoCanvas.width + x;
@@ -495,18 +533,41 @@ function createMirrorLaserEffectCanvas(logoCanvas: HTMLCanvasElement) {
       const down = sampleImageAlpha(sourceData.data, logoCanvas.width, logoCanvas.height, x, y + 1);
       const gradientX = right - left;
       const gradientY = down - up;
-      const edgeStrength = clamp((Math.abs(gradientX) + Math.abs(gradientY)) * 1.45, 0, 1);
-      const bevelLight = clamp(0.5 + (-gradientX * 0.72 - gradientY * 0.56) * 0.9, 0, 1);
+      const edgeStrength = clamp((Math.abs(gradientX) + Math.abs(gradientY)) * 1.6, 0, 1);
+      const bevelLight = clamp(0.5 + (-gradientX * 0.76 - gradientY * 0.58) * 0.9, 0, 1);
       const grainNoise = proceduralNoise(x * 1.17 + 9.1, y * 1.11 + 3.7);
-      const grain = (grainNoise - 0.5) * 0.05;
-      const metalBody = 0.69 + (rowNoise - 0.5) * 0.1 + brushedLine + grain;
-      const edgeBevel = (bevelLight - 0.5) * edgeStrength * 0.52;
-      const innerRecess = (1 - edgeStrength) * 0.07;
-      const brightness = clamp(metalBody + edgeBevel - innerRecess, 0.18, 0.98);
-      const coolTint = 1 + edgeStrength * 0.03;
+      const grain = (grainNoise - 0.5) * 0.028;
+      const backdropBrightness = backdropImageData
+        ? sampleImageBrightness(
+            backdropImageData.data,
+            backdropImageData.width,
+            backdropImageData.height,
+            (x / Math.max(1, logoCanvas.width - 1)) * (backdropImageData.width - 1),
+            (y / Math.max(1, logoCanvas.height - 1)) * (backdropImageData.height - 1)
+          )
+        : 0.3;
+      const reflectionDriver = clamp(0.58 + backdropBrightness * 0.42, 0.58, 0.94);
+      const diagonalCoord = (x + y * 0.62) / Math.max(1, logoCanvas.width + logoCanvas.height * 0.62);
+      const reflectionBandA = Math.exp(-Math.pow((diagonalCoord - 0.24) / 0.06, 2)) * 0.18;
+      const reflectionBandB = Math.exp(-Math.pow((diagonalCoord - 0.72) / 0.08, 2)) * 0.12;
+      const reflectionBandC =
+        Math.exp(-Math.pow(((x - y * 0.28) / Math.max(1, logoCanvas.width)) - 0.54, 2) / 0.01) *
+        0.08;
+      const metalBody =
+        reflectionDriver +
+        brushedLine +
+        grain +
+        reflectionBandA +
+        reflectionBandB +
+        reflectionBandC;
+      const edgeHighlight = smoothstep(0.52, 1, bevelLight) * edgeStrength * 0.18;
+      const edgeShadow = smoothstep(0.48, 0, bevelLight) * edgeStrength * 0.14;
+      const innerRecess = (1 - edgeStrength) * 0.055;
+      const brightness = clamp(metalBody + edgeHighlight - edgeShadow - innerRecess, 0.52, 1);
+      const coolTint = 1 + edgeStrength * 0.04;
 
-      effectData.data[dataIndex] = Math.round(clamp(brightness * 246, 0, 255));
-      effectData.data[dataIndex + 1] = Math.round(clamp(brightness * 249, 0, 255));
+      effectData.data[dataIndex] = Math.round(clamp(brightness * 242, 0, 255));
+      effectData.data[dataIndex + 1] = Math.round(clamp(brightness * 246, 0, 255));
       effectData.data[dataIndex + 2] = Math.round(clamp(brightness * 252 * coolTint, 0, 255));
       effectData.data[dataIndex + 3] = Math.round(alpha * 255);
     }
@@ -743,7 +804,7 @@ function resolveLogoInkColor(params: {
 }) {
   if (params.logoPrintColor === "original") return null;
   if (params.printingMethod === "laser_engraving") return hexToRgb("#302c27");
-  if (params.printingMethod === "mirror_laser_engraving") return hexToRgb("#8f8f95");
+  if (params.printingMethod === "mirror_laser_engraving") return hexToRgb("#f4f6fb");
   if (params.logoPrintColor === "white") return hexToRgb("#ffffff");
   if (params.logoPrintColor === "black") return hexToRgb("#050505");
 
@@ -754,9 +815,13 @@ function resolveLogoInkColor(params: {
   return hexToRgb(matchedPantone?.previewHex || "#050505");
 }
 
-function makeLogoEffectCanvas(logoCanvas: HTMLCanvasElement, printingMethod: string) {
+function makeLogoEffectCanvas(
+  logoCanvas: HTMLCanvasElement,
+  printingMethod: string,
+  backdropImageData?: ImageData
+) {
   if (printingMethod === "mirror_laser_engraving") {
-    return createMirrorLaserEffectCanvas(logoCanvas);
+    return createMirrorLaserEffectCanvas(logoCanvas, backdropImageData);
   }
 
   const effectCanvas = document.createElement("canvas");
@@ -801,9 +866,10 @@ function drawLogoWithPrintEffect(params: {
   rect: PixelRect;
   printingMethod: string;
   rotation: number;
+  backdropImageData?: ImageData;
 }) {
-  const { context, logoCanvas, rect, printingMethod, rotation } = params;
-  const effectCanvas = makeLogoEffectCanvas(logoCanvas, printingMethod);
+  const { context, logoCanvas, rect, printingMethod, rotation, backdropImageData } = params;
+  const effectCanvas = makeLogoEffectCanvas(logoCanvas, printingMethod, backdropImageData);
 
   context.save();
   context.translate(rect.x + rect.width / 2, rect.y + rect.height / 2);
@@ -826,12 +892,14 @@ function drawLogoWithPrintEffect(params: {
     context.globalCompositeOperation = "multiply";
   } else if (printingMethod === "mirror_laser_engraving") {
     const bevelOffset = Math.max(0.6, Math.min(rect.width, rect.height) * 0.012);
+    const shadowMask = createSolidAlphaMaskCanvas(logoCanvas, "#050505");
+    const lightMask = createSolidAlphaMaskCanvas(logoCanvas, "#ffffff");
 
     context.globalCompositeOperation = "multiply";
-    context.globalAlpha = 0.2;
+    context.globalAlpha = 0.18;
     context.filter = `blur(${Math.max(0.4, bevelOffset * 0.55)}px)`;
     context.drawImage(
-      logoCanvas,
+      shadowMask,
       -rect.width / 2 + bevelOffset,
       -rect.height / 2 + bevelOffset,
       rect.width,
@@ -840,9 +908,9 @@ function drawLogoWithPrintEffect(params: {
 
     context.filter = "none";
     context.globalCompositeOperation = "screen";
-    context.globalAlpha = 0.24;
+    context.globalAlpha = 0.16;
     context.drawImage(
-      logoCanvas,
+      lightMask,
       -rect.width / 2 - bevelOffset * 0.28,
       -rect.height / 2 - bevelOffset * 0.38,
       rect.width,
@@ -959,13 +1027,18 @@ async function composeMockupPreview(params: {
     width: drawWidth,
     height: drawHeight
   };
+  const backdropImageData =
+    params.printingMethod === "mirror_laser_engraving"
+      ? extractCanvasRegion(context, drawRect)
+      : undefined;
 
   drawLogoWithPrintEffect({
     context,
     logoCanvas,
     rect: drawRect,
     printingMethod: params.printingMethod,
-    rotation: finalRotation
+    rotation: finalRotation,
+    backdropImageData
   });
 
   return canvas.toDataURL("image/png");
@@ -1552,9 +1625,9 @@ function getMatteSoftLightResponse(params: {
   const { detailShade, highlightedPixel, microDetail, specularAmount, darkTintVisibility, profile } = params;
   const softLightAmount = smoothstep(0.08, 0.92, highlightedPixel);
   const matteVisibility = 0.28 + darkTintVisibility * 0.72;
-  const softLightBloom = softLightAmount * (0.024 + darkTintVisibility * 0.028);
+  const softLightBloom = softLightAmount * (0.029 + darkTintVisibility * 0.032);
   const softLightCompression =
-    softLightAmount * clamp(Math.abs(microDetail) * 1.6 + specularAmount * 0.08, 0, 0.028);
+    softLightAmount * clamp(Math.abs(microDetail) * 1.45 + specularAmount * 0.07, 0, 0.024);
   const softLightDetailRebound = microDetail * softLightAmount * 0.2;
   const matteShade = clamp(
     detailShade + softLightBloom - softLightCompression + softLightDetailRebound,
