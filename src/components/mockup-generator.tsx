@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
 import { getQuickColorOptions, resolveColorOption } from "@/lib/services/color-option.service";
 import {
@@ -118,6 +118,10 @@ type LayeredMaterialMapSourcesByFinish = Partial<
 
 const layeredMaterialMapCache = new Map<string, LayeredMaterialMaps>();
 const maxLayeredMaterialMapCacheEntries = 12;
+const layeredFinishSourceCache = new Map<string, LayeredFinishSource>();
+const maxLayeredFinishSourceCacheEntries = 6;
+const layeredMaterialMapSourceCache = new Map<string, LayeredMaterialMapSources>();
+const maxLayeredMaterialMapSourceCacheEntries = 6;
 
 type LogoTransform = {
   offsetX: number;
@@ -1194,12 +1198,71 @@ function hasLayeredMaterialMapSources(
 }
 
 function setCachedLayeredMaterialMaps(cacheKey: string, maps: LayeredMaterialMaps) {
-  if (layeredMaterialMapCache.size >= maxLayeredMaterialMapCacheEntries) {
-    const firstKey = layeredMaterialMapCache.keys().next().value;
-    if (firstKey) layeredMaterialMapCache.delete(firstKey);
+  setCachedLayeredEntry(layeredMaterialMapCache, cacheKey, maps, maxLayeredMaterialMapCacheEntries);
+}
+
+function setCachedLayeredEntry<T>(
+  cache: Map<string, T>,
+  cacheKey: string,
+  value: T,
+  maxEntries: number
+) {
+  if (cache.size >= maxEntries) {
+    const firstKey = cache.keys().next().value;
+    if (firstKey) cache.delete(firstKey);
   }
 
-  layeredMaterialMapCache.set(cacheKey, maps);
+  cache.set(cacheKey, value);
+}
+
+function getLayeredAssetCacheKey(
+  width: number,
+  height: number,
+  signature: string
+) {
+  return `${width}x${height}|${signature}`;
+}
+
+function getOrCreateLayeredFinishSource(params: {
+  finishImage: HTMLImageElement;
+  width: number;
+  height: number;
+  sourceSignature: string;
+}) {
+  const { finishImage, width, height, sourceSignature } = params;
+  const cacheKey = getLayeredAssetCacheKey(width, height, sourceSignature);
+  const cachedSource = layeredFinishSourceCache.get(cacheKey);
+  if (cachedSource) return cachedSource;
+
+  const source = createLayeredFinishSource(finishImage, width, height);
+  setCachedLayeredEntry(
+    layeredFinishSourceCache,
+    cacheKey,
+    source,
+    maxLayeredFinishSourceCacheEntries
+  );
+  return source;
+}
+
+function getOrCreateLayeredMaterialMapSources(params: {
+  materialMapImages: LayeredMaterialMapImages;
+  width: number;
+  height: number;
+  sourceSignature: string;
+}) {
+  const { materialMapImages, width, height, sourceSignature } = params;
+  const cacheKey = getLayeredAssetCacheKey(width, height, sourceSignature);
+  const cachedSources = layeredMaterialMapSourceCache.get(cacheKey);
+  if (cachedSources) return cachedSources;
+
+  const sources = createLayeredMaterialMapSources(materialMapImages, width, height);
+  setCachedLayeredEntry(
+    layeredMaterialMapSourceCache,
+    cacheKey,
+    sources,
+    maxLayeredMaterialMapSourceCacheEntries
+  );
+  return sources;
 }
 
 function createMapBrightnessValues(mapData?: ImageData) {
@@ -1625,22 +1688,9 @@ async function renderLayeredProductMockup(params: {
 
   const width = layeredRender?.outputSize?.width || fallbackImage.naturalWidth || fallbackImage.width;
   const height = layeredRender?.outputSize?.height || fallbackImage.naturalHeight || fallbackImage.height;
-  const finishSources = Object.fromEntries(
-    Object.entries(finishImages).map(([finish, finishImage]) => [
-      finish,
-      createLayeredFinishSource(finishImage, width, height)
-    ])
-  ) as Partial<Record<ProductFinishOption, LayeredFinishSource>>;
-  const fallbackSource = finishSources[fallbackFinish];
-  if (!fallbackSource) {
-    throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish source is missing.");
-  }
-  const materialMapSources = Object.fromEntries(
-    Object.entries(materialMapImages).map(([finish, mapImages]) => [
-      finish,
-      createLayeredMaterialMapSources(mapImages, width, height)
-    ])
-  ) as LayeredMaterialMapSourcesByFinish;
+  const finishSourceSignatures = Object.fromEntries(
+    Object.entries(finishBaseImages).map(([finish, assetUrl]) => [finish, assetUrl])
+  ) as Partial<Record<ProductFinishOption, string>>;
   const materialMapSignatures = Object.fromEntries(
     Object.entries(layeredRender?.materialMaps || {}).map(([finish, mapSet]) => [
       finish,
@@ -1650,6 +1700,32 @@ async function renderLayeredProductMockup(params: {
         .join(";")
     ])
   ) as Partial<Record<ProductFinishOption, string>>;
+  const finishSources = Object.fromEntries(
+    Object.entries(finishImages).map(([finish, finishImage]) => [
+      finish,
+      getOrCreateLayeredFinishSource({
+        finishImage,
+        width,
+        height,
+        sourceSignature: finishSourceSignatures[finish as ProductFinishOption] || fallbackFinishUrl
+      })
+    ])
+  ) as Partial<Record<ProductFinishOption, LayeredFinishSource>>;
+  const fallbackSource = finishSources[fallbackFinish];
+  if (!fallbackSource) {
+    throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish source is missing.");
+  }
+  const materialMapSources = Object.fromEntries(
+    Object.entries(materialMapImages).map(([finish, mapImages]) => [
+      finish,
+      getOrCreateLayeredMaterialMapSources({
+        materialMapImages: mapImages,
+        width,
+        height,
+        sourceSignature: materialMapSignatures[finish as ProductFinishOption] || finish
+      })
+    ])
+  ) as LayeredMaterialMapSourcesByFinish;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -1812,6 +1888,8 @@ export default function MockupGenerator({
   );
   const [partPantones, setPartPantones] = useState<Record<string, string>>({});
   const [partFinishes, setPartFinishes] = useState<Record<string, ProductFinishOption>>({});
+  const deferredPartPantones = useDeferredValue(partPantones);
+  const deferredPartFinishes = useDeferredValue(partFinishes);
   const [logoPrintColor, setLogoPrintColor] = useState("");
   const [printingMethod, setPrintingMethod] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -2189,7 +2267,11 @@ export default function MockupGenerator({
 
     let selectedPartPantones: SelectedPartPantone[];
     try {
-      selectedPartPantones = buildSelectedPartPantones(template, partPantones, partFinishes);
+      selectedPartPantones = buildSelectedPartPantones(
+        template,
+        deferredPartPantones,
+        deferredPartFinishes
+      );
     } catch {
       return;
     }
@@ -2225,7 +2307,7 @@ export default function MockupGenerator({
     return () => {
       isCancelled = true;
     };
-  }, [template, partPantones, partFinishes]);
+  }, [template, deferredPartPantones, deferredPartFinishes]);
 
   useEffect(() => {
     let isCancelled = false;
