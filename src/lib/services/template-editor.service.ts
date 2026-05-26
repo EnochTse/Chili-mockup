@@ -46,11 +46,11 @@ const layeredMaterialMapKeys: LayeredMaterialMapKey[] = [
 
 const defaultLayeredFinishRules: Record<ProductFinishOption, LayeredRenderFinishRule> = {
   matte: {
-    colorOpacity: 0.98,
+    colorOpacity: 0.99,
     blendMode: "source-over",
-    highlightProtection: 0.18,
-    textureStrength: 0.16,
-    saturationBoost: 0.06
+    highlightProtection: 0.08,
+    textureStrength: 0.1,
+    saturationBoost: 0.05
   },
   glossy: {
     colorOpacity: 0.97,

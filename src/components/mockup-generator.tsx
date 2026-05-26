@@ -1042,21 +1042,27 @@ function getLayeredMaterialProfile(params: {
   if (isWhiteTint) {
     return {
       tonalAnchor: 0.6,
-      tonalContrast: 1 + textureStrength * 1.55,
+      tonalContrast: 1 + textureStrength * (finish === "matte" ? 0.75 : 1.55),
       shadeBase: 0.72,
       shadeRange: 0.31,
       shadeGamma: 1.05,
       shadowStart: 0.16,
       shadowEnd: 0.68,
-      shadowStrength: 0.12 + textureStrength * 0.12,
+      shadowStrength:
+        finish === "matte" ? 0.09 + textureStrength * 0.06 : 0.12 + textureStrength * 0.12,
       minShade: 0.62,
-      maxShade: 1.06,
+      maxShade: finish === "matte" ? 1.02 : 1.06,
       highlightStart: 0.72,
       highlightEnd: 0.98,
-      highlightPower: finish === "glossy" ? 1.55 : 2.35,
-      highlightStrength: clamp(0.04 + highlightProtection * 0.18, 0.04, 0.24),
-      microDetailStrength: 1.35 + textureStrength * 2.8,
-      microDetailClamp: 0.12 + textureStrength * 0.2
+      highlightPower: finish === "glossy" ? 1.55 : finish === "matte" ? 2.8 : 2.35,
+      highlightStrength:
+        finish === "matte"
+          ? clamp(0.025 + highlightProtection * 0.08, 0.025, 0.1)
+          : clamp(0.04 + highlightProtection * 0.18, 0.04, 0.24),
+      microDetailStrength:
+        finish === "matte" ? 0.55 + textureStrength * 1.1 : 1.35 + textureStrength * 2.8,
+      microDetailClamp:
+        finish === "matte" ? 0.025 + textureStrength * 0.06 : 0.12 + textureStrength * 0.2
     };
   }
 
@@ -1078,6 +1084,27 @@ function getLayeredMaterialProfile(params: {
       highlightStrength: clamp(0.08 + highlightProtection * 0.24, 0.08, 0.3),
       microDetailStrength: 0.9 + textureStrength * 1.55,
       microDetailClamp: 0.07 + textureStrength * 0.12
+    };
+  }
+
+  if (finish === "matte") {
+    return {
+      tonalAnchor: 0.58,
+      tonalContrast: 1 + textureStrength * 0.75,
+      shadeBase: 0.4,
+      shadeRange: 0.58,
+      shadeGamma: 1.18,
+      shadowStart: 0.14,
+      shadowEnd: 0.72,
+      shadowStrength: 0.07,
+      minShade: 0.22,
+      maxShade: 1.03,
+      highlightStart: 0.68,
+      highlightEnd: 0.98,
+      highlightPower: 2.8,
+      highlightStrength: clamp(0.018 + highlightProtection * 0.08, 0.018, 0.095),
+      microDetailStrength: 0.42 + textureStrength * 0.9,
+      microDetailClamp: 0.018 + textureStrength * 0.045
     };
   }
 
@@ -1328,6 +1355,7 @@ function createLayeredMaterialMaps(params: {
     ? createMapBrightnessValues(materialMaps?.specular)
     : undefined;
   const manualEdgeAoValues = usesManualMaps ? createMapBrightnessValues(materialMaps?.edgeAo) : undefined;
+  const isMatteFinish = finish === "matte";
 
   for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
     const index = pixelIndex * 4;
@@ -1372,13 +1400,25 @@ function createLayeredMaterialMaps(params: {
     if (usesManualMaps) {
       const isWhiteProfile = profile.minShade >= 0.55;
       const manualShadow = manualShadowValues
-        ? smoothstep(0.06, 0.84, getMapBrightnessValue(manualShadowValues, pixelIndex, 0))
+        ? smoothstep(
+            isMatteFinish ? 0.08 : 0.06,
+            isMatteFinish ? 0.78 : 0.84,
+            getMapBrightnessValue(manualShadowValues, pixelIndex, 0)
+          )
         : shadow;
       const manualEdgeAo = manualEdgeAoValues
-        ? smoothstep(0.12, 0.72, getMapBrightnessValue(manualEdgeAoValues, pixelIndex, 0))
+        ? smoothstep(
+            isMatteFinish ? 0.18 : 0.12,
+            isMatteFinish ? 0.82 : 0.72,
+            getMapBrightnessValue(manualEdgeAoValues, pixelIndex, 0)
+          )
         : 0;
       const manualHighlight = manualHighlightValues
-        ? smoothstep(0.55, 0.98, getMapBrightnessValue(manualHighlightValues, pixelIndex, 0))
+        ? smoothstep(
+            isMatteFinish ? 0.2 : 0.55,
+            isMatteFinish ? 0.88 : 0.98,
+            getMapBrightnessValue(manualHighlightValues, pixelIndex, 0)
+          )
         : highlight;
 
       if (manualTextureValues) {
@@ -1391,27 +1431,42 @@ function createLayeredMaterialMaps(params: {
             getMapBrightnessValueAt(manualTextureValues, width, height, pixelX, pixelY + sampleRadius)) /
           6;
         microDetail = clamp(
-          (textureBrightness - textureAverage) * profile.microDetailStrength * 1.4,
+          (textureBrightness - textureAverage) *
+            profile.microDetailStrength *
+            (isMatteFinish ? 0.68 : 1.4),
           -profile.microDetailClamp,
           profile.microDetailClamp
         );
       }
 
-      const isMatteFinish = finish === "matte";
       const shadeCeiling = isWhiteProfile
-        ? Math.min(profile.maxShade, 1.04)
+        ? Math.min(profile.maxShade, isMatteFinish ? 1 : 1.04)
         : isMatteFinish
-          ? Math.min(profile.maxShade, 1.08)
+          ? Math.min(profile.maxShade, 0.98)
           : profile.maxShade;
       const shadowImpact = isWhiteProfile
-        ? 0.32
+        ? isMatteFinish
+          ? 0.25
+          : 0.32
         : finish === "glossy"
           ? 0.56
           : isMatteFinish
-            ? 0.54
+            ? 0.44
             : 0.48;
-      const edgeImpact = isWhiteProfile ? 0.12 : isMatteFinish ? 0.24 : 0.18;
-      const highlightLift = isWhiteProfile ? 0.08 : isMatteFinish ? 0.025 : 0.05;
+      const edgeImpact = isWhiteProfile
+        ? isMatteFinish
+          ? 0.16
+          : 0.12
+        : isMatteFinish
+          ? 0.28
+          : 0.18;
+      const highlightLift = isWhiteProfile
+        ? isMatteFinish
+          ? 0.035
+          : 0.08
+        : isMatteFinish
+          ? 0.02
+          : 0.05;
       shade = clamp(
         shadeCeiling -
           manualShadow * shadowImpact -
@@ -1428,18 +1483,18 @@ function createLayeredMaterialMaps(params: {
           getMapBrightnessValue(manualSpecularValues, pixelIndex, 0)
         );
         specular =
-          Math.pow(manualSpecular, 1.12) *
+          Math.pow(manualSpecular, isMatteFinish ? 1.75 : 1.12) *
           profile.highlightStrength *
-          (finish === "glossy" ? 1.85 : isMatteFinish ? 0.72 : 1.25);
+          (finish === "glossy" ? 1.85 : isMatteFinish ? 0.46 : 1.25);
       }
 
       specular = clamp(
         specular +
           manualHighlight *
             profile.highlightStrength *
-            (isWhiteProfile ? 0.32 : isMatteFinish ? 0.1 : 0.24),
+            (isWhiteProfile ? (isMatteFinish ? 0.16 : 0.32) : isMatteFinish ? 0.07 : 0.24),
         0,
-        isWhiteProfile ? 0.26 : isMatteFinish ? 0.14 : 0.34
+        isWhiteProfile ? (isMatteFinish ? 0.085 : 0.26) : isMatteFinish ? 0.055 : 0.34
       );
       shadow = manualShadow;
       highlight = manualHighlight;
@@ -1462,12 +1517,13 @@ function createLayeredMaterialMaps(params: {
 }
 
 function composeLayeredMaterialColor(params: {
+  finish: ProductFinishOption;
   albedoLinear: LinearRgb;
   maps: LayeredMaterialMaps;
   profile: LayeredMaterialProfile;
   pixelIndex: number;
 }): LinearRgb {
-  const { albedoLinear, maps, profile, pixelIndex } = params;
+  const { finish, albedoLinear, maps, profile, pixelIndex } = params;
   const shade = decodeShadeMapValue(maps.shadowMap[pixelIndex], profile);
   const microDetail = decodeSignedMapValue(
     maps.textureMap[pixelIndex],
@@ -1481,6 +1537,23 @@ function composeLayeredMaterialColor(params: {
     g: clamp(albedoLinear.g * detailShade, 0, 1),
     b: clamp(albedoLinear.b * detailShade, 0, 1)
   };
+
+  if (finish === "matte") {
+    const diffuseBloom = highlightedPixel * 0.018;
+    const matteShade = clamp(detailShade + diffuseBloom, profile.minShade, profile.maxShade);
+    const matteAlbedo = {
+      r: clamp(albedoLinear.r * matteShade, 0, 1),
+      g: clamp(albedoLinear.g * matteShade, 0, 1),
+      b: clamp(albedoLinear.b * matteShade, 0, 1)
+    };
+    const sheenLift = specularAmount * (0.18 + highlightedPixel * 0.04);
+
+    return {
+      r: clamp(matteAlbedo.r + (1 - matteAlbedo.r) * sheenLift, 0, 1),
+      g: clamp(matteAlbedo.g + (1 - matteAlbedo.g) * sheenLift, 0, 1),
+      b: clamp(matteAlbedo.b + (1 - matteAlbedo.b) * sheenLift, 0, 1)
+    };
+  }
 
   return mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
 }
@@ -1619,6 +1692,7 @@ function createLayeredPartCanvas(params: {
     }
 
     const finalColor = composeLayeredMaterialColor({
+      finish,
       albedoLinear,
       maps: materialMaps,
       profile,
