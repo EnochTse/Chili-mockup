@@ -1090,21 +1090,21 @@ function getLayeredMaterialProfile(params: {
   if (finish === "matte") {
     return {
       tonalAnchor: 0.58,
-      tonalContrast: 1 + textureStrength * 0.95,
+      tonalContrast: 1 + textureStrength * 1.1,
       shadeBase: 0.4,
-      shadeRange: 0.66,
+      shadeRange: 0.7,
       shadeGamma: 1.18,
       shadowStart: 0.14,
       shadowEnd: 0.72,
       shadowStrength: 0.07,
-      minShade: 0.18,
+      minShade: 0.16,
       maxShade: 1.08,
       highlightStart: 0.68,
       highlightEnd: 0.98,
       highlightPower: 2.3,
       highlightStrength: clamp(0.035 + highlightProtection * 0.14, 0.035, 0.16),
-      microDetailStrength: 0.65 + textureStrength * 1.35,
-      microDetailClamp: 0.03 + textureStrength * 0.075
+      microDetailStrength: 0.82 + textureStrength * 1.7,
+      microDetailClamp: 0.04 + textureStrength * 0.09
     };
   }
 
@@ -1433,7 +1433,7 @@ function createLayeredMaterialMaps(params: {
         microDetail = clamp(
           (textureBrightness - textureAverage) *
             profile.microDetailStrength *
-            (isMatteFinish ? 0.92 : 1.4),
+            (isMatteFinish ? 1.12 : 1.4),
           -profile.microDetailClamp,
           profile.microDetailClamp
         );
@@ -1451,21 +1451,21 @@ function createLayeredMaterialMaps(params: {
         : finish === "glossy"
           ? 0.56
           : isMatteFinish
-            ? 0.38
+            ? 0.44
             : 0.48;
       const edgeImpact = isWhiteProfile
         ? isMatteFinish
           ? 0.16
           : 0.12
         : isMatteFinish
-          ? 0.22
+          ? 0.26
           : 0.18;
       const highlightLift = isWhiteProfile
         ? isMatteFinish
           ? 0.035
           : 0.08
         : isMatteFinish
-          ? 0.11
+          ? 0.085
           : 0.05;
       shade = clamp(
         shadeCeiling -
@@ -1541,7 +1541,7 @@ function composeLayeredMaterialColor(params: {
   if (finish === "matte") {
     const albedoLuminance = getRelativeLuminanceLinear(albedoLinear);
     const darkTintVisibility = 1 - smoothstep(0.025, 0.16, albedoLuminance);
-    const diffuseBloom = highlightedPixel * (0.04 + darkTintVisibility * 0.05);
+    const diffuseBloom = highlightedPixel * (0.032 + darkTintVisibility * 0.038);
     const matteShade = clamp(detailShade + diffuseBloom, profile.minShade, profile.maxShade);
     const matteAlbedo = {
       r: clamp(albedoLinear.r * matteShade, 0, 1),
@@ -1551,7 +1551,7 @@ function composeLayeredMaterialColor(params: {
     const sheenLift = specularAmount * (0.42 + highlightedPixel * 0.14);
     const darkLightLift =
       darkTintVisibility *
-      (highlightedPixel * 0.09 + specularAmount * 0.68 + Math.max(microDetail, 0) * 0.28);
+      (highlightedPixel * 0.07 + specularAmount * 0.6 + Math.max(microDetail, 0) * 0.42);
     const matteReflectanceColor = mixLinearColor(albedoLinear, { r: 0.2, g: 0.2, b: 0.2 }, 0.42);
 
     return {

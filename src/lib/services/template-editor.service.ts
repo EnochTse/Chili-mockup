@@ -48,8 +48,8 @@ const defaultLayeredFinishRules: Record<ProductFinishOption, LayeredRenderFinish
   matte: {
     colorOpacity: 0.98,
     blendMode: "source-over",
-    highlightProtection: 0.16,
-    textureStrength: 0.14,
+    highlightProtection: 0.14,
+    textureStrength: 0.18,
     saturationBoost: 0.05
   },
   glossy: {
