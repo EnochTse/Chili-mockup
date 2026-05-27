@@ -1149,6 +1149,7 @@ type LayeredMaterialProfile = {
 };
 
 type MatteSoftLightResponse = {
+  softLightAmount: number;
   matteShade: number;
   sheenLift: number;
   formVisibilityLift: number;
@@ -1882,6 +1883,7 @@ function getMatteSoftLightResponse(params: {
     darkTintVisibility * Math.max(microDetail, 0) * 0.28;
 
   return {
+    softLightAmount,
     matteShade,
     sheenLift,
     formVisibilityLift,
@@ -1933,26 +1935,51 @@ function composeLayeredMaterialColor(params: {
       softLightResponse.reflectanceLift +
       softLightResponse.formVisibilityLift +
       softLightResponse.textureVisibilityLift;
+    const darkFormSignal = smoothstep(
+      profile.minShade,
+      profile.maxShade,
+      softLightResponse.matteShade
+    );
+    const darkVisibilityColor = mixLinearColor(
+      albedoLinear,
+      { r: 0.34, g: 0.34, b: 0.34 },
+      0.62
+    );
+    const darkVisibilityLift =
+      darkTintVisibility *
+      (0.018 +
+        softLightResponse.softLightAmount * 0.075 +
+        specularAmount * 0.18 +
+        darkFormSignal * 0.03);
+    const darkDetailContrast =
+      darkTintVisibility *
+      clamp(microDetail * 0.55 + Math.abs(microDetail) * 0.08, -0.016, 0.032);
 
     return {
       r: clamp(
         matteAlbedo.r +
           matteReflectanceColor.r * totalReflectanceLift +
-          (1 - matteAlbedo.r) * softLightResponse.sheenLift,
+          (1 - matteAlbedo.r) * softLightResponse.sheenLift +
+          darkVisibilityColor.r * darkVisibilityLift +
+          darkDetailContrast,
         0,
         1
       ),
       g: clamp(
         matteAlbedo.g +
           matteReflectanceColor.g * totalReflectanceLift +
-          (1 - matteAlbedo.g) * softLightResponse.sheenLift,
+          (1 - matteAlbedo.g) * softLightResponse.sheenLift +
+          darkVisibilityColor.g * darkVisibilityLift +
+          darkDetailContrast,
         0,
         1
       ),
       b: clamp(
         matteAlbedo.b +
           matteReflectanceColor.b * totalReflectanceLift +
-          (1 - matteAlbedo.b) * softLightResponse.sheenLift,
+          (1 - matteAlbedo.b) * softLightResponse.sheenLift +
+          darkVisibilityColor.b * darkVisibilityLift +
+          darkDetailContrast,
         0,
         1
       )

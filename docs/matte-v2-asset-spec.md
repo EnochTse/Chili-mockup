@@ -50,6 +50,8 @@ When a product provides manual matte maps and part masks, the renderer builds a 
 - `specular`: underpowered sheen maps receive a small lift, capped to avoid glossy or plastic-looking matte.
 - `edgeAo`: remains mostly unchanged because broad AO can make matte products look dirty or over-dark.
 
+For very dark matte colors, the renderer also applies a shared low-reflectance visibility response after map calibration. This keeps black matte visually black while allowing broad soft light, form curvature, and micro texture to remain visible.
+
 This calibration is bounded and data-driven. It is meant to correct asset-pack drift between products, not to replace clean technical maps.
 
 ## AI Generation Prompt Notes
