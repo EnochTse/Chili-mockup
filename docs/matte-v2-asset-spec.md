@@ -52,6 +52,8 @@ When a product provides manual matte maps and part masks, the renderer builds a 
 
 For very dark matte colors, the renderer also applies a shared low-reflectance visibility response after map calibration. This keeps black matte visually black while allowing broad soft light, form curvature, and micro texture to remain visible.
 
+Deep matte soft light is shape-stabilized against the calibrated form/shadow map before visibility lifts are applied. This keeps black products from reproducing awkward highlight-map blobs while still preserving a soft matte highlight.
+
 The dark matte response favors clean form and fine texture. It deliberately limits broad texture contrast so uneven map patches do not become visible dirt on black products.
 
 This calibration is bounded and data-driven. It is meant to correct asset-pack drift between products, not to replace clean technical maps.
