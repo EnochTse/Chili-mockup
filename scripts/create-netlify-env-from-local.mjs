@@ -73,7 +73,11 @@ const netlifyEnv = [
   "NODE_ENV=production",
   `NEXT_PUBLIC_SHOW_DEBUG=${readValue(localEnv.get("NEXT_PUBLIC_SHOW_DEBUG"), exampleEnv.get("NEXT_PUBLIC_SHOW_DEBUG"), "false")}`,
   "",
-  "# Setup Studio save is local-only; Netlify branch deploys render from checked-in template assets.",
+  "# Optional Supabase live Setup Studio database.",
+  `NEXT_PUBLIC_SUPABASE_URL=${readValue(localEnv.get("NEXT_PUBLIC_SUPABASE_URL"), exampleEnv.get("NEXT_PUBLIC_SUPABASE_URL"))}`,
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY=${readValue(localEnv.get("NEXT_PUBLIC_SUPABASE_ANON_KEY"), exampleEnv.get("NEXT_PUBLIC_SUPABASE_ANON_KEY"))}`,
+  "",
+  "# Setup Studio image uploads are local-only until Supabase Storage is connected.",
   `MAX_UPLOAD_SIZE_MB=${readValue(localEnv.get("MAX_UPLOAD_SIZE_MB"), exampleEnv.get("MAX_UPLOAD_SIZE_MB"), "4")}`,
   ""
 ].join("\n");

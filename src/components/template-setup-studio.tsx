@@ -14,7 +14,13 @@ import {
   productCategoryOptions
 } from "@/lib/services/product-category.service";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
+import {
+  isLiveTemplateDatabaseConfigured,
+  listLatestLiveTemplates,
+  saveLiveTemplateVersion
+} from "@/lib/services/live-template-database.service";
 import type {
+  LayeredRenderConfig,
   LayeredRenderFinishRule,
   LogoOrientationPreset,
   PartIndicatorAnchor,
@@ -56,6 +62,19 @@ const defaultPrintingMethods = [
   "laser_engraving",
   "mirror_laser_engraving"
 ];
+const defaultLogoPrintColors = ["white", "black", "original", "pantone_match"];
+const defaultTemplateConstraints = {
+  preserveBackground: true,
+  preserveLighting: true,
+  preserveProductShape: true,
+  preserveMaterialTexture: true,
+  allowOnlyDefinedRecolorRegion: true,
+  allowOnlyDefinedLogoRegion: true,
+  noPeople: true,
+  noExtraProps: true,
+  noExtraBranding: true,
+  noExtraTextExceptLogo: true
+};
 
 function createDraftPart(index: number): ProductColorPart {
   return {
@@ -223,6 +242,115 @@ function canSaveTemplateInCurrentEnvironment() {
 
   const hostname = window.location.hostname.toLowerCase();
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function mergeTemplates(
+  baseTemplates: TemplatePublicDto[],
+  liveTemplates: TemplatePublicDto[]
+) {
+  const mergedTemplates = new Map(baseTemplates.map((template) => [template.slug, template]));
+
+  for (const liveTemplate of liveTemplates) {
+    mergedTemplates.set(liveTemplate.slug, liveTemplate);
+  }
+
+  return Array.from(mergedTemplates.values()).sort((left, right) =>
+    left.name.localeCompare(right.name)
+  );
+}
+
+function hasPendingAssetUploads(params: {
+  formState: EditorFormState;
+  partMaskFiles: Record<string, File | null>;
+  finishBaseFiles: Partial<Record<ProductFinishOption, File | null>>;
+  printingAreaFiles: Record<string, File | null>;
+}) {
+  return Boolean(
+    params.formState.baseImageFile ||
+      params.formState.instructionImageFile ||
+      Object.values(params.partMaskFiles).some(Boolean) ||
+      Object.values(params.finishBaseFiles).some(Boolean) ||
+      Object.values(params.printingAreaFiles).some(Boolean)
+  );
+}
+
+function buildLiveLayeredRender(
+  formState: EditorFormState,
+  sourceTemplate: TemplatePublicDto
+): LayeredRenderConfig | undefined {
+  if (!formState.layeredRenderEnabled) return undefined;
+
+  const outputWidth = Number(formState.layeredOutputWidth);
+  const outputHeight = Number(formState.layeredOutputHeight);
+  const outputSize =
+    Number.isFinite(outputWidth) && outputWidth > 0 && Number.isFinite(outputHeight) && outputHeight > 0
+      ? {
+          width: outputWidth,
+          height: outputHeight
+        }
+      : sourceTemplate.layeredRender?.outputSize;
+  const partMasks = Object.fromEntries(
+    formState.colorParts
+      .filter((part) => part.partMaskImageFileName)
+      .map((part) => [part.id, part.partMaskImageFileName!])
+  );
+
+  return {
+    enabled: true,
+    mode: "local-layered",
+    ...(outputSize ? { outputSize } : {}),
+    fallbackFinish: formState.layeredFallbackFinish,
+    finishBaseImages: formState.layeredFinishBaseImages,
+    ...(sourceTemplate.layeredRender?.materialMaps
+      ? { materialMaps: sourceTemplate.layeredRender.materialMaps }
+      : {}),
+    partMasks,
+    finishRules: formState.layeredFinishRules
+  };
+}
+
+function buildLiveTemplateFromFormState(
+  formState: EditorFormState,
+  sourceTemplate: TemplatePublicDto | null,
+  fallbackPantoneOptions: TemplatePublicDto["pantoneOptions"]
+): TemplatePublicDto {
+  if (!sourceTemplate) {
+    throw new Error(
+      "Supabase database phase only edits existing products. Add new product images in the repo first."
+    );
+  }
+
+  const sourcePartsById = new Map(sourceTemplate.colorParts.map((part) => [part.id, part]));
+
+  return {
+    id: formState.slug,
+    slug: formState.slug,
+    name: formState.name,
+    category: formState.category,
+    description: formState.description,
+    size: formState.size || undefined,
+    specifications: formState.specifications.filter((item) => item.label || item.value),
+    baseImageUrl: formState.baseImageUrl || sourceTemplate.baseImageUrl,
+    instructionImageUrl: formState.instructionImageUrl || sourceTemplate.instructionImageUrl,
+    usageType: "visual_reference_only",
+    allowedLogoPrintColors: sourceTemplate.allowedLogoPrintColors || defaultLogoPrintColors,
+    defaultLogoPrintColor: sourceTemplate.defaultLogoPrintColor || "white",
+    allowedPrintingMethods: sourceTemplate.allowedPrintingMethods || defaultPrintingMethods,
+    pantoneOptions: sourceTemplate.pantoneOptions || fallbackPantoneOptions,
+    colorParts: formState.colorParts.map((part) => ({
+      ...part,
+      partMaskImageUrl: sourcePartsById.get(part.id)?.partMaskImageUrl
+    })),
+    layeredRender: buildLiveLayeredRender(formState, sourceTemplate),
+    logoPlacement: {
+      ...sourceTemplate.logoPlacement,
+      orientationPreset: formState.logoOrientationPreset,
+      ...(Object.keys(formState.logoPrintingAreaImages).length
+        ? { printingAreaImages: formState.logoPrintingAreaImages }
+        : {})
+    },
+    constraints: sourceTemplate.constraints || defaultTemplateConstraints
+  };
 }
 
 function buildIndicatorExportPayload(formState: EditorFormState) {
@@ -559,6 +687,7 @@ export default function TemplateSetupStudio({
     finish: ProductFinishOption;
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLiveTemplateLoading, setIsLiveTemplateLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const baseImagePreviewUrl = useResolvedAssetPreview(
@@ -575,12 +704,52 @@ export default function TemplateSetupStudio({
     [selectedSlug, templates]
   );
   const isNewTemplate = selectedSlug === newTemplateKey || !selectedTemplate;
-  const canSaveTemplate = canSaveTemplateInCurrentEnvironment();
-  const saveModeLabel = canSaveTemplate ? "Local save enabled" : "Preview only";
+  const liveDatabaseEnabled = isLiveTemplateDatabaseConfigured();
+  const canSaveLocally = canSaveTemplateInCurrentEnvironment();
+  const canSaveTemplate = liveDatabaseEnabled || canSaveLocally;
+  const saveModeLabel = liveDatabaseEnabled
+    ? "Supabase live database"
+    : canSaveLocally
+      ? "Local save enabled"
+      : "Preview only";
   const logoPrintingMethods =
     selectedTemplate?.allowedPrintingMethods?.length
       ? selectedTemplate.allowedPrintingMethods
       : defaultPrintingMethods;
+
+  useEffect(() => {
+    if (!liveDatabaseEnabled) return;
+
+    let isCancelled = false;
+
+    setIsLiveTemplateLoading(true);
+    listLatestLiveTemplates(initialTemplates)
+      .then((liveTemplates) => {
+        if (isCancelled || !liveTemplates.length) return;
+
+        const nextTemplates = mergeTemplates(initialTemplates, liveTemplates);
+        const selectedTemplateFromLive =
+          nextTemplates.find((template) => template.slug === selectedSlug) || nextTemplates[0];
+
+        setTemplates(nextTemplates);
+        if (selectedTemplateFromLive && selectedSlug !== newTemplateKey) {
+          setSelectedSlug(selectedTemplateFromLive.slug);
+          setFormState(buildFormStateFromTemplate(selectedTemplateFromLive));
+        }
+        setSaveMessage("Loaded live template data from Supabase.");
+      })
+      .catch((error) => {
+        if (isCancelled) return;
+        setSaveError(error instanceof Error ? error.message : "Failed to load live templates.");
+      })
+      .finally(() => {
+        if (!isCancelled) setIsLiveTemplateLoading(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   function updateIndicatorAnchorField(
     partIndex: number,
@@ -700,8 +869,76 @@ export default function TemplateSetupStudio({
     }
   }
 
+  async function handleLiveTemplateSave(status: "draft" | "published") {
+    if (isNewTemplate || !selectedTemplate) {
+      setSaveError(
+        "Supabase database phase can edit existing products only. Add new product images in the repo first."
+      );
+      setSaveMessage(null);
+      return;
+    }
+
+    if (formState.originalSlug && formState.slug !== formState.originalSlug) {
+      setSaveError("Changing the product slug is not supported in live database mode yet.");
+      setSaveMessage(null);
+      return;
+    }
+
+    if (
+      hasPendingAssetUploads({
+        formState,
+        partMaskFiles,
+        finishBaseFiles,
+        printingAreaFiles
+      })
+    ) {
+      setSaveError(
+        "This first Supabase phase saves database settings only. Keep image uploads unchanged until Storage is connected."
+      );
+      setSaveMessage(null);
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveMessage(null);
+
+    try {
+      const liveTemplate = buildLiveTemplateFromFormState(
+        formState,
+        selectedTemplate,
+        initialTemplates[0]?.pantoneOptions || []
+      );
+      const savedVersion = await saveLiveTemplateVersion(liveTemplate, status);
+      const nextTemplates = mergeTemplates(templates, [savedVersion.template]);
+
+      setTemplates(nextTemplates);
+      setSelectedSlug(savedVersion.template.slug);
+      setFormState(buildFormStateFromTemplate(savedVersion.template));
+      setPartMaskFiles({});
+      setFinishBaseFiles({});
+      setPrintingAreaFiles({});
+      setSaveMessage(
+        status === "published"
+          ? `Published live template v${savedVersion.version} to Supabase.`
+          : `Saved Supabase draft v${savedVersion.version}.`
+      );
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to save live template to Supabase."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (liveDatabaseEnabled) {
+      await handleLiveTemplateSave("draft");
+      return;
+    }
+
     if (!canSaveTemplate) {
       setSaveError(
         "This Netlify setup page is preview-only. To save template files back into the repo, open Setup studio on local localhost."
@@ -847,13 +1084,13 @@ export default function TemplateSetupStudio({
           <h1 className="hero-title">Configure product templates in the UI</h1>
           <p className="hero-support">
             Maintain template metadata, product parts, finish options, instruction anchors, and
-            asset pairs from one editor before pushing the result back to GitHub.
+            asset pairs from one editor before publishing the result to the live database.
           </p>
         </div>
         <div className="hero-aside-stack">
           <div className="notice-panel">
-            This editor updates local template files, product images, and instruction images inside
-            the current workspace.
+            Supabase database mode saves product settings live. Image upload still uses the
+            existing checked-in asset paths until Storage is connected.
           </div>
           <div className="hero-stat-grid" aria-label="Setup overview">
             <article className="stat-card">
@@ -865,9 +1102,11 @@ export default function TemplateSetupStudio({
               <span className="stat-label">Current mode</span>
               <strong className="stat-value stat-value-compact">{saveModeLabel}</strong>
               <p className="stat-copy">
-                {canSaveTemplate
-                  ? "Changes can be saved back into workspace files."
-                  : "Branch deploy can preview edits, but saving is disabled."}
+                {liveDatabaseEnabled
+                  ? "Save drafts or publish settings directly to Supabase."
+                  : canSaveTemplate
+                    ? "Changes can be saved back into workspace files."
+                    : "Branch deploy can preview edits, but saving is disabled."}
               </p>
             </article>
             <article className="stat-card">
@@ -947,8 +1186,8 @@ export default function TemplateSetupStudio({
             <div className="notice-panel sidebar-note-panel">
               <strong>Recommended flow</strong>
               <br />
-              Create or select a template, edit parts and indicators, save locally, then open the
-              mockup page to validate the final operator experience.
+              Select an existing template, edit parts and indicators, save a draft, then publish
+              live when the mockup page should use the new settings.
             </div>
           </div>
         </aside>
@@ -964,11 +1203,17 @@ export default function TemplateSetupStudio({
             ) : null}
             <div className="setup-inline-actions">
               <span className={`status-pill${canSaveTemplate ? " is-complete" : ""}`}>
-                {saveModeLabel}
+                {isLiveTemplateLoading ? "Loading live data..." : saveModeLabel}
               </span>
               <span className="status-pill">{isNewTemplate ? "Draft template" : "Existing template"}</span>
             </div>
-            {!canSaveTemplate ? (
+            {liveDatabaseEnabled ? (
+              <p className="fine-print">
+                Live database mode saves template settings only. Uploading new images will be
+                enabled after Supabase Storage is connected. Add Supabase Auth/RLS before sharing
+                this setup URL publicly.
+              </p>
+            ) : !canSaveTemplate ? (
               <p className="fine-print">
                 This Netlify setup page is preview-only. Save template works on local localhost.
               </p>
@@ -1825,6 +2070,17 @@ export default function TemplateSetupStudio({
                     Open mockup
                   </Link>
                 ) : null}
+                {liveDatabaseEnabled ? (
+                  <button
+                    className="secondary-link-button"
+                    type="button"
+                    disabled={isSaving || isNewTemplate}
+                    title="Publish this template version to the live mockup page"
+                    onClick={() => handleLiveTemplateSave("published")}
+                  >
+                    {isSaving ? "Saving..." : "Publish live"}
+                  </button>
+                ) : null}
                 <button
                   className="button-primary"
                   type="submit"
@@ -1835,7 +2091,13 @@ export default function TemplateSetupStudio({
                       : "Save template is available on local localhost only"
                   }
                 >
-                  {isSaving ? "Saving..." : canSaveTemplate ? "Save template" : "Local save only"}
+                  {isSaving
+                    ? "Saving..."
+                    : liveDatabaseEnabled
+                      ? "Save draft"
+                      : canSaveTemplate
+                        ? "Save template"
+                        : "Local save only"}
                 </button>
               </div>
             </div>

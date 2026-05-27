@@ -113,7 +113,7 @@ describe("template.service", () => {
       fallbackFinish: "matte",
       finishBaseImages: {
         matte: "/mockup-templates/bnd62/layered/BND62_Matt.png",
-        glossy: "/mockup-templates/bnd62/layered/BND62_Glossy.png",
+        glossy: "/mockup-templates/bnd62/layered/BND62_glossy_base.png",
         rubber: "/mockup-templates/bnd62/layered/BND62_Rubber.png",
         chrome: "/mockup-templates/bnd62/layered/BND62_Chrome.png"
       },

@@ -7,7 +7,7 @@ describe("prompt.service", () => {
       label: "Mirror laser engraving"
     });
     expect(getPrintingMethodPrompt("mirror_laser_engraving").prompt).toContain(
-      "reflective black-to-white metallic gradient"
+      "brushed-metal texture"
     );
   });
 

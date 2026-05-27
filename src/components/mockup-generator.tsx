@@ -14,6 +14,10 @@ import {
   normalizeProductCategory,
   productCategoryOptions
 } from "@/lib/services/product-category.service";
+import {
+  getPublishedLiveTemplate,
+  isLiveTemplateDatabaseConfigured
+} from "@/lib/services/live-template-database.service";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import type {
   LayeredMaterialMapKey,
@@ -2527,6 +2531,38 @@ export default function MockupGenerator({
     process.env.NODE_ENV === "development" ||
     process.env.NEXT_PUBLIC_SHOW_DEBUG === "true";
 
+  function applyTemplateState(nextTemplate: TemplatePublicDto) {
+    setTemplate(nextTemplate);
+    setTemplateError(null);
+    setIsTemplateLoading(false);
+    setPantoneFilter("");
+    setOpenPartId(null);
+    setExpandedPartId(nextTemplate.colorParts[0]?.id || null);
+    setFocusedPartId(nextTemplate.colorParts[0]?.id || null);
+    setSelectedCategory(normalizeProductCategory(nextTemplate.category));
+    setPartPantones(
+      Object.fromEntries(
+        nextTemplate.colorParts
+          .filter((part) => part.defaultPantoneCode)
+          .map((part) => [part.id, part.defaultPantoneCode!])
+      )
+    );
+    setPartFinishes(buildInitialPartFinishes(nextTemplate));
+    setLogoPrintColor(nextTemplate.defaultLogoPrintColor || "");
+    setPrintingMethod("");
+    setLogoFile(null);
+    setResult(null);
+    setPreviewImageUrl(null);
+    setCompositedPreviewUrl(null);
+    setIsPreviewResolving(false);
+    setLogoTransform(createDefaultLogoTransform());
+    setIsLogoDragging(false);
+    setIsInstructionOpen(false);
+    logoDragStateRef.current = null;
+    setSubmitError(null);
+    setGenerationStatus(null);
+  }
+
   function clearPreviewRetryTimeout() {
     if (previewRetryTimeoutRef.current !== null) {
       window.clearTimeout(previewRetryTimeoutRef.current);
@@ -2577,35 +2613,7 @@ export default function MockupGenerator({
 
   useEffect(() => {
     if (initialTemplate) {
-      setTemplate(initialTemplate);
-      setTemplateError(null);
-      setIsTemplateLoading(false);
-      setPantoneFilter("");
-      setOpenPartId(null);
-      setExpandedPartId(initialTemplate.colorParts[0]?.id || null);
-      setFocusedPartId(initialTemplate.colorParts[0]?.id || null);
-      setSelectedCategory(normalizeProductCategory(initialTemplate.category));
-      setPartPantones(
-        Object.fromEntries(
-          initialTemplate.colorParts
-            .filter((part) => part.defaultPantoneCode)
-            .map((part) => [part.id, part.defaultPantoneCode!])
-        )
-      );
-      setPartFinishes(buildInitialPartFinishes(initialTemplate));
-      setLogoPrintColor(initialTemplate.defaultLogoPrintColor || "");
-      setPrintingMethod("");
-      setLogoFile(null);
-      setResult(null);
-      setPreviewImageUrl(null);
-      setCompositedPreviewUrl(null);
-      setIsPreviewResolving(false);
-      setLogoTransform(createDefaultLogoTransform());
-      setIsLogoDragging(false);
-      setIsInstructionOpen(false);
-      logoDragStateRef.current = null;
-      setSubmitError(null);
-      setGenerationStatus(null);
+      applyTemplateState(initialTemplate);
       return;
     }
 
@@ -2616,6 +2624,28 @@ export default function MockupGenerator({
     setFocusedPartId(null);
     setPartFinishes({});
   }, [productSlug]);
+
+  useEffect(() => {
+    if (!initialTemplate || !isLiveTemplateDatabaseConfigured()) return;
+
+    let isCancelled = false;
+
+    getPublishedLiveTemplate(productSlug, initialTemplate)
+      .then((liveTemplate) => {
+        if (isCancelled || !liveTemplate) return;
+        applyTemplateState(liveTemplate);
+      })
+      .catch((error) => {
+        if (isCancelled) return;
+        setSubmitError(
+          error instanceof Error ? error.message : "Failed to load Supabase live template."
+        );
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [productSlug, initialTemplate]);
 
   function selectProductCategory(category: (typeof productCategoryOptions)[number]) {
     if (!categoryCounts.get(category)) return;
