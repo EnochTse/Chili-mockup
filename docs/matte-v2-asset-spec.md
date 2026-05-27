@@ -38,6 +38,20 @@ Matte V2 treats matte as a separate material model, not as a weakened glossy ren
 - `matte_micrograin.png`: product area should stay near 50% gray with very low contrast.
 - `matte_sheen.png`: most product pixels should stay near black; only soft sheen zones should rise.
 
+## Renderer Calibration
+
+The renderer keeps one shared matte finish rule across products. Product-specific matte fixes should not be made by changing individual `finishRules` unless there is a deliberate exception.
+
+When a product provides manual matte maps and part masks, the renderer builds a product-area mask from the part masks and calibrates the manual map brightness before material composition:
+
+- `shadow`: very dark shadow-map values are gently lifted so black matte does not collapse into a solid silhouette.
+- `highlight`: weak soft-light maps are normalized toward a common matte light range so dark colors retain broad form light.
+- `texture`: low-contrast texture maps are re-centered around mid gray and gently amplified so micro detail survives dark recoloring.
+- `specular`: underpowered sheen maps receive a small lift, capped to avoid glossy or plastic-looking matte.
+- `edgeAo`: remains mostly unchanged because broad AO can make matte products look dirty or over-dark.
+
+This calibration is bounded and data-driven. It is meant to correct asset-pack drift between products, not to replace clean technical maps.
+
 ## AI Generation Prompt Notes
 
 When generating these maps, ask for "technical compositing maps" rather than a beautiful grayscale render. The output should be useful data for a renderer, not a finished product visualization.

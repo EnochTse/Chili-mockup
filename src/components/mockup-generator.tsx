@@ -104,6 +104,32 @@ type LayeredMaterialMaps = {
   specularMap: Uint8ClampedArray;
 };
 
+type LayeredMaterialCalibrationMask = {
+  width: number;
+  height: number;
+  values: Uint8Array;
+  coveredPixelCount: number;
+  signature: string;
+};
+
+type MapBrightnessStats = {
+  p05: number;
+  p10: number;
+  p50: number;
+  p90: number;
+  p95: number;
+};
+
+type MatteMapCalibration = {
+  shadowLitnessLift: number;
+  highlightInputLow: number;
+  highlightInputHigh: number;
+  highlightStrength: number;
+  textureCenter: number;
+  textureScale: number;
+  specularLift: number;
+};
+
 type LayeredMaterialMapImages = Partial<Record<LayeredMaterialMapKey, HTMLImageElement>>;
 
 type LayeredMaterialMapSources = Partial<Record<LayeredMaterialMapKey, ImageData>>;
@@ -1410,12 +1436,135 @@ function createMapBrightnessValues(mapData?: ImageData) {
   return values;
 }
 
+function createMapBrightnessStats(
+  values: Uint8ClampedArray | undefined,
+  calibrationMask: LayeredMaterialCalibrationMask | undefined
+): MapBrightnessStats | undefined {
+  if (!values || !calibrationMask?.coveredPixelCount) return undefined;
+
+  const maxSamples = 60000;
+  const sampleStride = Math.max(1, Math.floor(calibrationMask.coveredPixelCount / maxSamples));
+  const samples: number[] = [];
+  let coveredSeen = 0;
+
+  for (let pixelIndex = 0; pixelIndex < values.length; pixelIndex += 1) {
+    if (!calibrationMask.values[pixelIndex]) continue;
+    if (coveredSeen % sampleStride === 0) {
+      samples.push(values[pixelIndex] / 255);
+    }
+    coveredSeen += 1;
+  }
+
+  if (!samples.length) return undefined;
+
+  samples.sort((left, right) => left - right);
+  const percentile = (ratio: number) => samples[Math.floor((samples.length - 1) * ratio)];
+
+  return {
+    p05: percentile(0.05),
+    p10: percentile(0.1),
+    p50: percentile(0.5),
+    p90: percentile(0.9),
+    p95: percentile(0.95)
+  };
+}
+
+function createMatteMapCalibration(params: {
+  shadowValues?: Uint8ClampedArray;
+  highlightValues?: Uint8ClampedArray;
+  textureValues?: Uint8ClampedArray;
+  specularValues?: Uint8ClampedArray;
+  calibrationMask?: LayeredMaterialCalibrationMask;
+}): MatteMapCalibration | undefined {
+  const { shadowValues, highlightValues, textureValues, specularValues, calibrationMask } = params;
+  if (!calibrationMask?.coveredPixelCount) return undefined;
+
+  const shadowStats = createMapBrightnessStats(shadowValues, calibrationMask);
+  const highlightStats = createMapBrightnessStats(highlightValues, calibrationMask);
+  const textureStats = createMapBrightnessStats(textureValues, calibrationMask);
+  const specularStats = createMapBrightnessStats(specularValues, calibrationMask);
+
+  return {
+    shadowLitnessLift: shadowStats
+      ? clamp((0.62 - shadowStats.p10) * 1.2, 0, 0.18)
+      : 0,
+    highlightInputLow: highlightStats?.p10 ?? 0.12,
+    highlightInputHigh: Math.max((highlightStats?.p90 ?? 0.72), (highlightStats?.p10 ?? 0.12) + 0.08),
+    highlightStrength: highlightStats
+      ? clamp((0.72 - highlightStats.p90) / 0.28, 0, 1)
+      : 0,
+    textureCenter: textureStats?.p50 ?? 0.5,
+    textureScale: textureStats
+      ? clamp(0.08 / Math.max(0.025, textureStats.p95 - textureStats.p05), 1, 2.8)
+      : 1,
+    specularLift: specularStats
+      ? clamp((0.62 - specularStats.p90) * 0.5, 0, 0.12)
+      : 0
+  };
+}
+
+function remapUnitValue(
+  value: number,
+  inputLow: number,
+  inputHigh: number,
+  outputLow: number,
+  outputHigh: number
+) {
+  if (inputHigh <= inputLow) return value;
+  const normalized = clamp((value - inputLow) / (inputHigh - inputLow), 0, 1);
+  return outputLow + normalized * (outputHigh - outputLow);
+}
+
+function applyMatteMapCalibration(
+  value: number,
+  mapKey: "shadow" | "highlight" | "texture" | "specular" | "edgeAo",
+  calibration?: MatteMapCalibration
+) {
+  if (!calibration) return value;
+
+  if (mapKey === "shadow") {
+    return clamp(value + (1 - value) * calibration.shadowLitnessLift, 0, 1);
+  }
+
+  if (mapKey === "highlight") {
+    const normalizedHighlight = remapUnitValue(
+      value,
+      calibration.highlightInputLow,
+      calibration.highlightInputHigh,
+      0.1,
+      0.82
+    );
+    return clamp(value + (normalizedHighlight - value) * calibration.highlightStrength, 0, 1);
+  }
+
+  if (mapKey === "texture") {
+    return clamp(0.5 + (value - calibration.textureCenter) * calibration.textureScale, 0.38, 0.62);
+  }
+
+  if (mapKey === "specular") {
+    return clamp(value + (1 - value) * calibration.specularLift, 0, 1);
+  }
+
+  return value;
+}
+
 function getMapBrightnessValue(
   values: Uint8ClampedArray | undefined,
   pixelIndex: number,
   fallback: number
 ) {
   return values ? values[pixelIndex] / 255 : fallback;
+}
+
+function getCalibratedMapBrightnessValue(
+  values: Uint8ClampedArray | undefined,
+  pixelIndex: number,
+  fallback: number,
+  mapKey: "shadow" | "highlight" | "texture" | "specular" | "edgeAo",
+  calibration?: MatteMapCalibration
+) {
+  const value = getMapBrightnessValue(values, pixelIndex, fallback);
+  return applyMatteMapCalibration(value, mapKey, calibration);
 }
 
 function getMapBrightnessValueAt(
@@ -1430,13 +1579,27 @@ function getMapBrightnessValueAt(
   return values[sampleY * width + sampleX] / 255;
 }
 
+function getCalibratedMapBrightnessValueAt(
+  values: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  mapKey: "shadow" | "highlight" | "texture" | "specular" | "edgeAo",
+  calibration?: MatteMapCalibration
+) {
+  const value = getMapBrightnessValueAt(values, width, height, x, y);
+  return applyMatteMapCalibration(value, mapKey, calibration);
+}
+
 function createLayeredMaterialMaps(params: {
   finish: ProductFinishOption;
   finishData: ImageData;
   profile: LayeredMaterialProfile;
   materialMaps?: LayeredMaterialMapSources;
+  calibrationMask?: LayeredMaterialCalibrationMask;
 }): LayeredMaterialMaps {
-  const { finish, finishData, profile, materialMaps } = params;
+  const { finish, finishData, profile, materialMaps, calibrationMask } = params;
   const { width, height } = finishData;
   const pixelCount = width * height;
   const shadowMap = new Uint8ClampedArray(pixelCount);
@@ -1455,6 +1618,16 @@ function createLayeredMaterialMaps(params: {
     : undefined;
   const manualEdgeAoValues = usesManualMaps ? createMapBrightnessValues(materialMaps?.edgeAo) : undefined;
   const isMatteFinish = finish === "matte";
+  const matteMapCalibration =
+    isMatteFinish && usesManualMaps
+      ? createMatteMapCalibration({
+          shadowValues: manualShadowValues,
+          highlightValues: manualHighlightValues,
+          textureValues: manualTextureValues,
+          specularValues: manualSpecularValues,
+          calibrationMask
+        })
+      : undefined;
 
   for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
     const index = pixelIndex * 4;
@@ -1498,7 +1671,13 @@ function createLayeredMaterialMaps(params: {
 
     if (usesManualMaps) {
       const isWhiteProfile = profile.minShade >= 0.55;
-      const manualShadowBrightness = getMapBrightnessValue(manualShadowValues, pixelIndex, 0);
+      const manualShadowBrightness = getCalibratedMapBrightnessValue(
+        manualShadowValues,
+        pixelIndex,
+        0,
+        "shadow",
+        matteMapCalibration
+      );
       const manualShadow = manualShadowValues
         ? isMatteFinish
           ? smoothstep(0.12, 0.86, 1 - manualShadowBrightness)
@@ -1508,25 +1687,75 @@ function createLayeredMaterialMaps(params: {
         ? smoothstep(
             isMatteFinish ? 0.18 : 0.12,
             isMatteFinish ? 0.82 : 0.72,
-            getMapBrightnessValue(manualEdgeAoValues, pixelIndex, 0)
+            getCalibratedMapBrightnessValue(
+              manualEdgeAoValues,
+              pixelIndex,
+              0,
+              "edgeAo",
+              matteMapCalibration
+            )
           )
         : 0;
       const manualHighlight = manualHighlightValues
         ? smoothstep(
             isMatteFinish ? 0.2 : 0.55,
             isMatteFinish ? 0.88 : 0.98,
-            getMapBrightnessValue(manualHighlightValues, pixelIndex, 0)
+            getCalibratedMapBrightnessValue(
+              manualHighlightValues,
+              pixelIndex,
+              0,
+              "highlight",
+              matteMapCalibration
+            )
           )
         : highlight;
 
       if (manualTextureValues) {
-        const textureBrightness = getMapBrightnessValue(manualTextureValues, pixelIndex, 0.5);
+        const textureBrightness = getCalibratedMapBrightnessValue(
+          manualTextureValues,
+          pixelIndex,
+          0.5,
+          "texture",
+          matteMapCalibration
+        );
         const textureAverage =
           (textureBrightness * 2 +
-            getMapBrightnessValueAt(manualTextureValues, width, height, pixelX - sampleRadius, pixelY) +
-            getMapBrightnessValueAt(manualTextureValues, width, height, pixelX + sampleRadius, pixelY) +
-            getMapBrightnessValueAt(manualTextureValues, width, height, pixelX, pixelY - sampleRadius) +
-            getMapBrightnessValueAt(manualTextureValues, width, height, pixelX, pixelY + sampleRadius)) /
+            getCalibratedMapBrightnessValueAt(
+              manualTextureValues,
+              width,
+              height,
+              pixelX - sampleRadius,
+              pixelY,
+              "texture",
+              matteMapCalibration
+            ) +
+            getCalibratedMapBrightnessValueAt(
+              manualTextureValues,
+              width,
+              height,
+              pixelX + sampleRadius,
+              pixelY,
+              "texture",
+              matteMapCalibration
+            ) +
+            getCalibratedMapBrightnessValueAt(
+              manualTextureValues,
+              width,
+              height,
+              pixelX,
+              pixelY - sampleRadius,
+              "texture",
+              matteMapCalibration
+            ) +
+            getCalibratedMapBrightnessValueAt(
+              manualTextureValues,
+              width,
+              height,
+              pixelX,
+              pixelY + sampleRadius,
+              "texture",
+              matteMapCalibration
+            )) /
           6;
         microDetail = clamp(
           (textureBrightness - textureAverage) *
@@ -1578,7 +1807,13 @@ function createLayeredMaterialMaps(params: {
         const manualSpecular = smoothstep(
           0.08,
           0.96,
-          getMapBrightnessValue(manualSpecularValues, pixelIndex, 0)
+          getCalibratedMapBrightnessValue(
+            manualSpecularValues,
+            pixelIndex,
+            0,
+            "specular",
+            matteMapCalibration
+          )
         );
         specular =
           Math.pow(manualSpecular, isMatteFinish ? 1.35 : 1.12) *
@@ -1878,6 +2113,47 @@ function createLayeredPartCanvas(params: {
   return outputCanvas;
 }
 
+function createLayeredMaterialCalibrationMask(params: {
+  maskImages: Record<string, HTMLImageElement>;
+  width: number;
+  height: number;
+  signature: string;
+}): LayeredMaterialCalibrationMask | undefined {
+  const { maskImages, width, height, signature } = params;
+  const entries = Object.values(maskImages);
+  if (!entries.length) return undefined;
+
+  const values = new Uint8Array(width * height);
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskContext = getCanvasContext(maskCanvas);
+  let coveredPixelCount = 0;
+
+  for (const maskImage of entries) {
+    maskContext.clearRect(0, 0, width, height);
+    maskContext.drawImage(maskImage, 0, 0, width, height);
+    const maskData = maskContext.getImageData(0, 0, width, height);
+
+    for (let index = 0; index < maskData.data.length; index += 4) {
+      const pixelIndex = index / 4;
+      if (values[pixelIndex] || getRedReferenceMaskAlpha(maskData.data, index) <= 0.02) continue;
+      values[pixelIndex] = 1;
+      coveredPixelCount += 1;
+    }
+  }
+
+  if (!coveredPixelCount) return undefined;
+
+  return {
+    width,
+    height,
+    values,
+    coveredPixelCount,
+    signature
+  };
+}
+
 async function renderLayeredProductMockup(params: {
   template: TemplatePublicDto;
   selectedPartPantones: SelectedPartPantone[];
@@ -1957,6 +2233,10 @@ async function renderLayeredProductMockup(params: {
         .join(";")
     ])
   ) as Partial<Record<ProductFinishOption, string>>;
+  const calibrationMaskSignature = partMaskEntries
+    .map(([partId, assetUrl]) => `${partId}:${assetUrl}`)
+    .sort()
+    .join(";");
   const finishSources = Object.fromEntries(
     Object.entries(finishImages).map(([finish, finishImage]) => [
       finish,
@@ -1983,6 +2263,12 @@ async function renderLayeredProductMockup(params: {
       })
     ])
   ) as LayeredMaterialMapSourcesByFinish;
+  const calibrationMask = createLayeredMaterialCalibrationMask({
+    maskImages,
+    width,
+    height,
+    signature: calibrationMaskSignature || "no-part-masks"
+  });
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -2000,6 +2286,7 @@ async function renderLayeredProductMockup(params: {
     manualMapSources?: LayeredMaterialMapSources;
     sourceSignature: string;
     manualMapSignature?: string;
+    calibrationMask?: LayeredMaterialCalibrationMask;
   }) {
     const {
       finish,
@@ -2010,7 +2297,8 @@ async function renderLayeredProductMockup(params: {
       textureStrength,
       manualMapSources,
       sourceSignature,
-      manualMapSignature
+      manualMapSignature,
+      calibrationMask
     } = params;
     const cacheKey = [
       finish,
@@ -2018,6 +2306,7 @@ async function renderLayeredProductMockup(params: {
       height,
       sourceSignature,
       manualMapSignature || "no-manual-map",
+      calibrationMask?.signature || "no-calibration-mask",
       hasLayeredMaterialMapSources(manualMapSources) ? "manual" : "auto",
       isWhiteTint ? "white" : "color",
       highlightProtection.toFixed(3),
@@ -2030,7 +2319,8 @@ async function renderLayeredProductMockup(params: {
       finish,
       finishData: finishSource.imageData,
       profile,
-      materialMaps: manualMapSources
+      materialMaps: manualMapSources,
+      calibrationMask
     });
     setCachedLayeredMaterialMaps(cacheKey, maps);
     return maps;
@@ -2070,7 +2360,8 @@ async function renderLayeredProductMockup(params: {
       textureStrength,
       manualMapSources: materialMapSources[finish],
       sourceSignature: finishBaseImages[finish] || fallbackFinishUrl,
-      manualMapSignature: materialMapSignatures[finish]
+      manualMapSignature: materialMapSignatures[finish],
+      calibrationMask
     });
     const partCanvas = createLayeredPartCanvas({
       width,
