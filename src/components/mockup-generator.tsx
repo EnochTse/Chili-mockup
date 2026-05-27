@@ -1496,7 +1496,7 @@ function createMatteMapCalibration(params: {
       : 0,
     textureCenter: textureStats?.p50 ?? 0.5,
     textureScale: textureStats
-      ? clamp(0.08 / Math.max(0.025, textureStats.p95 - textureStats.p05), 1, 2.8)
+      ? clamp(0.045 / Math.max(0.025, textureStats.p95 - textureStats.p05), 1, 1.55)
       : 1,
     specularLift: specularStats
       ? clamp((0.62 - specularStats.p90) * 0.5, 0, 0.12)
@@ -1539,7 +1539,7 @@ function applyMatteMapCalibration(
   }
 
   if (mapKey === "texture") {
-    return clamp(0.5 + (value - calibration.textureCenter) * calibration.textureScale, 0.38, 0.62);
+    return clamp(0.5 + (value - calibration.textureCenter) * calibration.textureScale, 0.43, 0.57);
   }
 
   if (mapKey === "specular") {
@@ -1863,8 +1863,8 @@ function getMatteSoftLightResponse(params: {
   const matteVisibility = 0.28 + darkTintVisibility * 0.72;
   const softLightBloom = softLightAmount * (0.029 + darkTintVisibility * 0.032);
   const softLightCompression =
-    softLightAmount * clamp(Math.abs(microDetail) * 1.45 + specularAmount * 0.07, 0, 0.024);
-  const softLightDetailRebound = microDetail * softLightAmount * 0.2;
+    softLightAmount * clamp(Math.abs(microDetail) * 0.95 + specularAmount * 0.07, 0, 0.02);
+  const softLightDetailRebound = microDetail * softLightAmount * 0.12;
   const matteShade = clamp(
     detailShade + softLightBloom - softLightCompression + softLightDetailRebound,
     profile.minShade,
@@ -1877,10 +1877,10 @@ function getMatteSoftLightResponse(params: {
     matteVisibility * (0.008 + smoothstep(profile.minShade, profile.maxShade, matteShade) * 0.024);
   const textureVisibilityLift =
     matteVisibility *
-    clamp(Math.abs(microDetail) * 1.55 + softLightAmount * 0.018 + specularAmount * 0.05, 0, 0.028);
+    clamp(Math.max(microDetail, 0) * 0.55 + softLightAmount * 0.012 + specularAmount * 0.035, 0, 0.018);
   const reflectanceLift =
     matteVisibility * (softLightAmount * 0.028 + specularAmount * 0.09) +
-    darkTintVisibility * Math.max(microDetail, 0) * 0.28;
+    darkTintVisibility * Math.max(microDetail, 0) * 0.14;
 
   return {
     softLightAmount,
@@ -1947,13 +1947,13 @@ function composeLayeredMaterialColor(params: {
     );
     const darkVisibilityLift =
       darkTintVisibility *
-      (0.018 +
-        softLightResponse.softLightAmount * 0.075 +
-        specularAmount * 0.18 +
-        darkFormSignal * 0.03);
+      (0.024 +
+        softLightResponse.softLightAmount * 0.042 +
+        specularAmount * 0.08 +
+        darkFormSignal * 0.028);
     const darkDetailContrast =
       darkTintVisibility *
-      clamp(microDetail * 0.55 + Math.abs(microDetail) * 0.08, -0.016, 0.032);
+      clamp(microDetail * 0.18, -0.004, 0.01);
 
     return {
       r: clamp(
