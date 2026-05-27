@@ -97,7 +97,7 @@
       "matte": "layered/BND877M_matte_base.png",
       "glossy": "layered/BND877M_matte_base.png",
       "rubber": "layered/BND877M_matte_base.png",
-      "metallic": "layered/BND877M_matte_base.png"
+      "metallic": "layered/BND877M_metallic_base.png"
     },
     "materialMaps": {
       "matte": {
@@ -107,6 +107,14 @@
         "texture": "layered/BND877M_matte_texture.png",
         "specular": "layered/BND877M_matte_specular.png",
         "edgeAo": "layered/BND877M_matte_edge_ao.png"
+      },
+      "metallic": {
+        "base": "layered/BND877M_metallic_base.png",
+        "shadow": "layered/BND877M_metallic_shadow.png",
+        "highlight": "layered/BND877M_metallic_highlight.png",
+        "texture": "layered/BND877M_metallic_texture.png",
+        "specular": "layered/BND877M_metallic_specular.png",
+        "edgeAo": "layered/BND877M_metallic_edge_ao.png"
       }
     },
     "partMasks": {
@@ -149,7 +157,15 @@
     "description": "Place the logo only inside the marked safe area from the instruction image.",
     "maxWidthMm": 120,
     "maxHeightMm": 45,
-    "notes": "Visual reference only; final artwork must be confirmed by Chili design team."
+    "notes": "Visual reference only; final artwork must be confirmed by Chili design team.",
+    "printingAreaImages": {
+      "silk_screen": "printing/BND877M_printing_area.png",
+      "uv_print": "printing/BND877M_printing_area.png",
+      "heat_transfer": "printing/BND877M_printing_area.png",
+      "embroidery": "printing/BND877M_printing_area.png",
+      "laser_engraving": "printing/BND877M_printing_area.png",
+      "mirror_laser_engraving": "printing/BND877M_printing_area.png"
+    }
   },
   "constraints": {
     "preserveBackground": true,
