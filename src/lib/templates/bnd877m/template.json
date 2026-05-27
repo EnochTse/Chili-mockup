@@ -145,11 +145,11 @@
         "saturationBoost": 0.05
       },
       "metallic": {
-        "colorOpacity": 0.95,
+        "colorOpacity": 0.98,
         "blendMode": "source-over",
-        "highlightProtection": 0.34,
-        "textureStrength": 0.16,
-        "saturationBoost": 0.08
+        "highlightProtection": 0.42,
+        "textureStrength": 0.18,
+        "saturationBoost": 0.18
       }
     }
   },

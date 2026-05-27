@@ -1995,6 +1995,20 @@ function composeLayeredMaterialColor(params: {
     };
   }
 
+  if (finish === "metallic") {
+    const highlightSignal = smoothstep(0.12, 0.94, highlightedPixel);
+    const coloredReflection = mixLinearColor(albedoLinear, { r: 1, g: 1, b: 1 }, 0.28);
+    const softMetalLift = clamp(highlightSignal * 0.075 + specularAmount * 0.52, 0, 0.42);
+    const whiteGlint = clamp(Math.pow(specularAmount, 1.75) * 0.18, 0, 0.16);
+    const reflectedColor = {
+      r: clamp(shadedAlbedo.r + coloredReflection.r * softMetalLift, 0, 1),
+      g: clamp(shadedAlbedo.g + coloredReflection.g * softMetalLift, 0, 1),
+      b: clamp(shadedAlbedo.b + coloredReflection.b * softMetalLift, 0, 1)
+    };
+
+    return mixLinearColor(reflectedColor, { r: 1, g: 1, b: 1 }, whiteGlint);
+  }
+
   return mixLinearColor(shadedAlbedo, { r: 1, g: 1, b: 1 }, specularAmount);
 }
 
