@@ -9,7 +9,40 @@ export interface ProductSpecification {
   value: string;
 }
 
-export type ProductFinishOption = "matte" | "glossy" | "rubber" | "metallic";
+export type ProductFinishOption = "matte" | "glossy" | "rubber" | "metallic" | "chrome";
+export type LogoOrientationPreset = "horizontal" | "vertical";
+
+export interface LayeredRenderFinishRule {
+  colorOpacity: number;
+  blendMode: GlobalCompositeOperation;
+  highlightProtection?: number;
+  textureStrength?: number;
+  saturationBoost?: number;
+}
+
+export type LayeredMaterialMapKey =
+  | "base"
+  | "shadow"
+  | "highlight"
+  | "texture"
+  | "specular"
+  | "edgeAo";
+
+export type LayeredMaterialMapSet = Partial<Record<LayeredMaterialMapKey, string>>;
+
+export interface LayeredRenderConfig {
+  enabled: boolean;
+  mode: "local-layered";
+  outputSize?: {
+    width: number;
+    height: number;
+  };
+  fallbackFinish: ProductFinishOption;
+  finishBaseImages: Partial<Record<ProductFinishOption, string>>;
+  materialMaps?: Partial<Record<ProductFinishOption, LayeredMaterialMapSet>>;
+  partMasks: Record<string, string>;
+  finishRules?: Partial<Record<ProductFinishOption, LayeredRenderFinishRule>>;
+}
 
 export interface ProductColorPart {
   id: string;
@@ -17,10 +50,20 @@ export interface ProductColorPart {
   description: string;
   instructionCue?: string;
   instructionColorHex?: string;
+  partMaskImageFileName?: string;
   defaultPantoneCode?: string;
   allowedFinishes?: ProductFinishOption[];
   defaultFinish?: ProductFinishOption;
   indicatorAnchors?: PartIndicatorAnchor[];
+}
+
+export interface TemplatePublicColorPart extends ProductColorPart {
+  partMaskImageUrl?: string;
+}
+
+export interface ResolvedProductColorPart extends ProductColorPart {
+  partMaskImagePath?: string;
+  partMaskImagePublicUrl?: string;
 }
 
 export interface PartIndicatorAnchor {
@@ -36,6 +79,8 @@ export interface LogoPlacement {
   maxWidthMm: number;
   maxHeightMm: number;
   notes: string;
+  orientationPreset?: LogoOrientationPreset;
+  printingAreaImages?: Record<string, string>;
 }
 
 export interface TemplateConstraints {
@@ -69,11 +114,13 @@ export interface ProductTemplate {
   pantoneLibrary?: string;
   pantoneOptions: PantoneOption[];
   colorParts: ProductColorPart[];
+  layeredRender?: LayeredRenderConfig;
   logoPlacement: LogoPlacement;
   constraints: TemplateConstraints;
 }
 
-export interface ResolvedProductTemplate extends ProductTemplate {
+export interface ResolvedProductTemplate extends Omit<ProductTemplate, "colorParts"> {
+  colorParts: ResolvedProductColorPart[];
   baseImagePublicUrl: string;
   instructionImagePublicUrl: string;
   baseProductImagePath: string;
@@ -106,7 +153,8 @@ export interface TemplatePublicDto {
   defaultLogoPrintColor: string;
   allowedPrintingMethods: string[];
   pantoneOptions: PantoneOption[];
-  colorParts: ProductColorPart[];
+  colorParts: TemplatePublicColorPart[];
+  layeredRender?: LayeredRenderConfig;
   logoPlacement: LogoPlacement;
   constraints: TemplateConstraints;
 }
@@ -117,16 +165,9 @@ export interface SelectedPartPantone {
   partDescription: string;
   instructionCue?: string;
   instructionColorHex?: string;
+  partMaskImagePath?: string;
+  partMaskImageUrl?: string;
   pantoneCode: string;
   pantone: PantoneOption;
   selectedFinish?: ProductFinishOption;
-}
-
-export interface ValidatedMockupRequest {
-  productSlug: string;
-  logoPrintColor: string;
-  printingMethod: string;
-  removeBackground: boolean;
-  logoFile: File;
-  selectedPartPantones: SelectedPartPantone[];
 }

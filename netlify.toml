@@ -7,12 +7,3 @@
   NPM_FLAGS = "--include=dev"
   NODE_VERSION = "22"
   NEXT_OUTPUT_EXPORT = "true"
-
-[functions]
-  directory = "netlify/functions"
-  node_bundler = "esbuild"
-  included_files = [
-    "public/mockup-templates/**",
-    "src/lib/pantone/**",
-    "src/lib/templates/**"
-  ]

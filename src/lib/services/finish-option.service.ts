@@ -4,20 +4,29 @@ export const productFinishOptions = [
   "matte",
   "glossy",
   "rubber",
-  "metallic"
+  "metallic",
+  "chrome"
 ] as const satisfies readonly ProductFinishOption[];
 
 export const productFinishLabels: Record<ProductFinishOption, string> = {
   matte: "Matte",
   glossy: "Glossy",
   rubber: "Rubber",
-  metallic: "Metallic"
+  metallic: "Metallic",
+  chrome: "Chrome"
 };
+
+export const colorLockedFinishOptions = ["chrome"] as const satisfies readonly ProductFinishOption[];
+const colorLockedFinishSet: readonly ProductFinishOption[] = colorLockedFinishOptions;
 
 type PartFinishConfig = {
   allowedFinishes?: unknown;
   defaultFinish?: unknown;
 };
+
+export function isColorLockedFinish(finish: ProductFinishOption | undefined) {
+  return Boolean(finish && colorLockedFinishSet.includes(finish));
+}
 
 export function normalizeProductFinishOption(value: unknown): ProductFinishOption | undefined {
   if (typeof value !== "string") return undefined;

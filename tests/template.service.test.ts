@@ -44,6 +44,8 @@ describe("template.service", () => {
         instructionCue: "Blue umbrella canopy region",
         instructionColorHex: "#1450FF",
         defaultPantoneCode: "Pantone Black C",
+        allowedFinishes: ["matte", "glossy", "rubber"],
+        defaultFinish: "matte",
         indicatorAnchors: [
           {
             id: "canopy-indicator-1",
@@ -94,11 +96,63 @@ describe("template.service", () => {
       id: "umbrella-classic-black",
       slug: "umbrella-classic-black",
       name: "Classic Umbrella",
-      category: "umbrella",
+      category: "Accessories",
       description: "Classic umbrella mockup generator using the real product photo and instruction guide.",
       size: "Standard full-size canopy",
       baseImageUrl: "/mockup-templates/umbrella-classic-black/base-product.png",
       instructionImageUrl: "/mockup-templates/umbrella-classic-black/instruction-image.jpg"
     });
+  });
+
+  it("publishes BND62 layered render assets for the browser renderer", async () => {
+    const template = toTemplatePublicDto(await loadTemplate("bnd62"));
+
+    expect(template.layeredRender).toMatchObject({
+      enabled: true,
+      mode: "local-layered",
+      fallbackFinish: "matte",
+      finishBaseImages: {
+        matte: "/mockup-templates/bnd62/layered/BND62_Matt.png",
+        glossy: "/mockup-templates/bnd62/layered/BND62_glossy_base.png",
+        rubber: "/mockup-templates/bnd62/layered/BND62_Rubber.png",
+        chrome: "/mockup-templates/bnd62/layered/BND62_Chrome.png"
+      },
+      partMasks: {
+        "part-1-nan6hb": "/mockup-templates/bnd62/layered/BND62_part_1.png",
+        "part-2-3ckhru": "/mockup-templates/bnd62/layered/BND62_part_2.png",
+        "part-3-tzd2o2": "/mockup-templates/bnd62/layered/BND62_part_3.png"
+      },
+      finishRules: {
+        matte: {
+          colorOpacity: 0.98,
+          highlightProtection: 0.18,
+          textureStrength: 0.16,
+          saturationBoost: 0.06
+        },
+        glossy: {
+          colorOpacity: 0.97,
+          highlightProtection: 0.28,
+          textureStrength: 0.18,
+          saturationBoost: 0.08
+        },
+        rubber: {
+          colorOpacity: 0.98,
+          highlightProtection: 0.2,
+          textureStrength: 0.18,
+          saturationBoost: 0.06
+        },
+        chrome: {
+          colorOpacity: 0.16,
+          highlightProtection: 0.72,
+          textureStrength: 0.34,
+          saturationBoost: 0
+        }
+      }
+    });
+    expect(template.colorParts.map((part) => part.allowedFinishes)).toEqual([
+      ["matte", "glossy", "rubber", "chrome"],
+      ["matte", "glossy", "rubber", "chrome"],
+      ["matte", "glossy", "rubber", "chrome"]
+    ]);
   });
 });

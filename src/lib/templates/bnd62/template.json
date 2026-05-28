@@ -2,7 +2,7 @@
   "id": "bnd62",
   "slug": "bnd62",
   "name": "FOLK – Recycled Stainless Steel Ballpen",
-  "category": "writing-instruments",
+  "category": "Writing Instruments",
   "description": "A Chili icon, redefined for sustainability. BND62 FOLK pen is one of Chili’s classic bestsellers — now crafted from GRS-certified recycled stainless steel for a writing experience that’s both timeless and eco-conscious. Also available as a matching rollerball pen for premium gift sets.",
   "size": "13.8 x 1.06 dia cm",
   "specifications": [],
@@ -37,7 +37,8 @@
       "allowedFinishes": [
         "matte",
         "glossy",
-        "rubber"
+        "rubber",
+        "chrome"
       ],
       "defaultFinish": "matte",
       "indicatorAnchors": [
@@ -67,9 +68,10 @@
       "allowedFinishes": [
         "matte",
         "glossy",
-        "metallic"
+        "rubber",
+        "chrome"
       ],
-      "defaultFinish": "metallic",
+      "defaultFinish": "glossy",
       "indicatorAnchors": [
         {
           "id": "part-2-indicator-1",
@@ -89,7 +91,8 @@
       "allowedFinishes": [
         "matte",
         "glossy",
-        "metallic"
+        "rubber",
+        "chrome"
       ],
       "defaultFinish": "glossy",
       "indicatorAnchors": [
@@ -103,11 +106,80 @@
       ]
     }
   ],
+  "layeredRender": {
+    "enabled": true,
+    "mode": "local-layered",
+    "outputSize": {
+      "width": 2048,
+      "height": 2048
+    },
+    "fallbackFinish": "matte",
+    "finishBaseImages": {
+      "matte": "layered/BND62_Matt.png",
+      "glossy": "layered/BND62_glossy_base.png",
+      "rubber": "layered/BND62_Rubber.png",
+      "chrome": "layered/BND62_Chrome.png"
+    },
+    "materialMaps": {
+      "glossy": {
+        "base": "layered/BND62_glossy_base.png",
+        "shadow": "layered/BND62_glossy_shadow.png",
+        "highlight": "layered/BND62_glossy_highlight.png",
+        "texture": "layered/BND62_glossy_texture.png",
+        "specular": "layered/BND62_glossy_specular.png",
+        "edgeAo": "layered/BND62_glossy_edge_ao.png"
+      }
+    },
+    "partMasks": {
+      "part-1-nan6hb": "layered/BND62_part_1.png",
+      "part-2-3ckhru": "layered/BND62_part_2.png",
+      "part-3-tzd2o2": "layered/BND62_part_3.png"
+    },
+    "finishRules": {
+      "matte": {
+        "colorOpacity": 0.98,
+        "blendMode": "source-over",
+        "highlightProtection": 0.18,
+        "textureStrength": 0.16,
+        "saturationBoost": 0.06
+      },
+      "glossy": {
+        "colorOpacity": 0.97,
+        "blendMode": "source-over",
+        "highlightProtection": 0.28,
+        "textureStrength": 0.18,
+        "saturationBoost": 0.08
+      },
+      "rubber": {
+        "colorOpacity": 0.98,
+        "blendMode": "source-over",
+        "highlightProtection": 0.2,
+        "textureStrength": 0.18,
+        "saturationBoost": 0.06
+      },
+      "chrome": {
+        "colorOpacity": 0.16,
+        "blendMode": "source-over",
+        "highlightProtection": 0.72,
+        "textureStrength": 0.34,
+        "saturationBoost": 0
+      }
+    }
+  },
   "logoPlacement": {
     "description": "Place the logo only inside the marked safe area from the instruction image.",
     "maxWidthMm": 120,
     "maxHeightMm": 45,
-    "notes": "Visual reference only; final artwork must be confirmed by Chili design team."
+    "notes": "Visual reference only; final artwork must be confirmed by Chili design team.",
+    "orientationPreset": "vertical",
+    "printingAreaImages": {
+      "silk_screen": "printing/BND62_printing_area.jpg",
+      "uv_print": "printing/BND62_printing_area.jpg",
+      "heat_transfer": "printing/BND62_printing_area.jpg",
+      "embroidery": "printing/BND62_printing_area.jpg",
+      "laser_engraving": "printing/BND62_printing_area.jpg",
+      "mirror_laser_engraving": "printing/BND62_printing_area.jpg"
+    }
   },
   "constraints": {
     "preserveBackground": true,

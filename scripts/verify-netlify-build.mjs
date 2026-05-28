@@ -5,12 +5,6 @@ const workspaceRoot = process.cwd();
 const outDir = path.resolve(workspaceRoot, "out");
 const staleApiArtifactDir = path.resolve(workspaceRoot, ".next", "server", "app", "api");
 const nextApiSourceDir = path.resolve(workspaceRoot, "src", "app", "api");
-const netlifyFunction = path.resolve(
-  workspaceRoot,
-  "netlify",
-  "functions",
-  "generate-mockup.ts"
-);
 
 async function exists(target) {
   try {
@@ -37,8 +31,4 @@ if (process.env.NETLIFY === "true" && (await exists(nextApiSourceDir))) {
   );
 }
 
-if (!(await exists(netlifyFunction))) {
-  throw new Error("Missing netlify/functions/generate-mockup.ts.");
-}
-
-console.log("Netlify build verified: static export plus small Netlify Function.");
+console.log("Netlify build verified: static export with local browser rendering.");

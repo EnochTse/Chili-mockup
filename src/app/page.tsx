@@ -4,6 +4,7 @@ import { listTemplateSummaries } from "@/lib/services/template.service";
 
 export default async function HomePage() {
   const templates = await listTemplateSummaries();
+  const firstTemplate = templates[0] || null;
 
   return (
     <main className="catalog-page">
@@ -20,13 +21,46 @@ export default async function HomePage() {
       </header>
 
       <section className="catalog-hero">
-        <div>
-          <p className="eyebrow">Available products</p>
-          <h1 className="hero-title">Choose a product template</h1>
+        <div className="hero-copy-stack">
+          <p className="eyebrow">Chili workflow</p>
+          <h1 className="hero-title">Choose a product and build a faster mockup review flow</h1>
+          <div className="hero-action-row">
+            {firstTemplate ? (
+              <Link
+                href={`/mockup/${firstTemplate.slug}`}
+                className="button-primary hero-link-button"
+              >
+                Open first mockup
+              </Link>
+            ) : null}
+            <Link href="/setup" className="secondary-link-button">
+              Manage template setup
+            </Link>
+          </div>
         </div>
-        <div className="notice-panel">
-          Each product template brings its own base image, instruction image, and
-          mockup rules.
+
+        <div className="hero-aside-stack">
+          <div className="hero-stat-grid" aria-label="Library overview">
+            <article className="stat-card">
+              <span className="stat-label">Templates</span>
+              <strong className="stat-value">{templates.length}</strong>
+            </article>
+            <article className="stat-card">
+              <span className="stat-label">Workflow</span>
+              <strong className="stat-value">3 steps</strong>
+            </article>
+            <article className="stat-card">
+              <span className="stat-label">Setup mode</span>
+              <strong className="stat-value">Local + Netlify</strong>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section className="section-heading-row">
+        <div>
+          <p className="panel-kicker">Available products</p>
+          <h2 className="section-title">Template library</h2>
         </div>
       </section>
 
@@ -42,9 +76,18 @@ export default async function HomePage() {
                 <img src={template.baseImageUrl} alt={template.name} />
               </div>
               <div className="catalog-card-body">
-                <p className="panel-kicker">{template.category}</p>
+                <div className="catalog-card-topline">
+                  <p className="panel-kicker">{template.category}</p>
+                  {template.size ? <span className="catalog-chip">{template.size}</span> : null}
+                </div>
                 <h2 className="section-title">{template.name}</h2>
                 <p className="panel-description">{template.description}</p>
+                <div className="catalog-card-footer">
+                  <span className="catalog-link-copy">Open mockup workspace</span>
+                  <span className="catalog-link-arrow" aria-hidden="true">
+                    →
+                  </span>
+                </div>
               </div>
             </Link>
           ))}

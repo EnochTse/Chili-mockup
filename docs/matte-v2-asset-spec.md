@@ -1,0 +1,88 @@
+# Matte V2 Asset Specification
+
+Matte V2 treats matte as a separate material model, not as a weakened glossy render. Every product using the matte layered renderer should provide aligned technical maps on the same canvas, with the same crop, scale, perspective, and product position.
+
+## Required Canvas Rules
+
+- All files must share the same pixel dimensions.
+- All files must use the same crop, product position, silhouette, and perspective.
+- Part masks must align exactly with every material map.
+- PNG is preferred for masks and maps.
+- Do not add labels, guides, callouts, shadows outside the product, or watermarks.
+
+## Required Files
+
+- `matte_base.png`: Neutral clean product base. Keep only minimal diffuse form readability. Avoid baked shadows, strong highlights, visible gray fog, color tint, dirt, scratches, or dramatic contrast.
+- `matte_form_shadow.png`: Broad visual form shading only. Dark pixels mean shadowed surface, bright pixels mean lit surface. Include cylindrical falloff and large surface curvature. Avoid seams, texture grain, and hard highlights.
+- `matte_edge_ao.png`: Tight ambient occlusion only. Black means no edge darkening, white means strongest contact darkening. Include seams, part breaks, handle contact, cap/body separation, and small underside occlusion.
+- `matte_soft_light.png`: Broad diffuse light only. Black means no light, white means strongest matte light. Keep it wide and soft. Avoid sharp glossy streaks.
+- `matte_micrograin.png`: Low-contrast matte micro texture. Product area should sit around 50% gray. Small deviations create fine grain. Avoid visible scratches, dust, stains, cloudy patches, or large gradients.
+- `matte_sheen.png`: Very low-intensity matte sheen. Black means no sheen, white means maximum allowed sheen, but most product pixels should stay dark. Avoid glossy reflections and bright hard highlights.
+- `part_1.png`, `part_2.png`, etc.: Technical part masks. Red product pixels on a white or transparent background are supported by the current renderer.
+
+## Template Key Mapping
+
+- `base` should reference `matte_base.png`.
+- `shadow` should reference `matte_form_shadow.png`.
+- `highlight` should reference `matte_soft_light.png`.
+- `texture` should reference `matte_micrograin.png`.
+- `specular` should reference `matte_sheen.png`.
+- `edgeAo` should reference `matte_edge_ao.png`.
+
+## Brightness Targets
+
+- `matte_base.png`: product average should stay visually neutral, not washed out or smoky.
+- `matte_form_shadow.png`: broad lit areas should be brighter and broad shadow areas should be darker. Avoid x-ray style inversion where light-facing surfaces are dark and shadow-facing surfaces are bright.
+- `matte_edge_ao.png`: edge lines can be bright, but broad regions should remain mostly black.
+- `matte_soft_light.png`: light should be soft and controlled; avoid large pure-white areas.
+- `matte_micrograin.png`: product area should stay near 50% gray with very low contrast.
+- `matte_sheen.png`: most product pixels should stay near black; only soft sheen zones should rise.
+
+## Renderer Calibration
+
+The renderer keeps one shared matte finish rule across products. Product-specific matte fixes should not be made by changing individual `finishRules` unless there is a deliberate exception.
+
+When a product provides manual matte maps and part masks, the renderer builds a product-area mask from the part masks and calibrates the manual map brightness before material composition:
+
+- `shadow`: very dark shadow-map values are gently lifted so black matte does not collapse into a solid silhouette.
+- `highlight`: weak soft-light maps are normalized toward a common matte light range so dark colors retain broad form light.
+- `texture`: low-contrast texture maps are re-centered around mid gray and gently amplified so micro detail survives dark recoloring.
+- `specular`: underpowered sheen maps receive a small lift, capped to avoid glossy or plastic-looking matte.
+- `edgeAo`: remains mostly unchanged because broad AO can make matte products look dirty or over-dark.
+
+For very dark matte colors, the renderer also applies a shared low-reflectance visibility response after map calibration. This keeps black matte visually black while allowing broad soft light, form curvature, and micro texture to remain visible.
+
+Deep matte soft light is shape-stabilized against the calibrated form/shadow map before visibility lifts are applied. This keeps black products from reproducing awkward highlight-map blobs while still preserving a soft matte highlight.
+
+The dark matte response favors clean form and fine texture. It deliberately limits broad texture contrast so uneven map patches do not become visible dirt on black products.
+
+This calibration is bounded and data-driven. It is meant to correct asset-pack drift between products, not to replace clean technical maps.
+
+## AI Generation Prompt Notes
+
+When generating these maps, ask for "technical compositing maps" rather than a beautiful grayscale render. The output should be useful data for a renderer, not a finished product visualization.
+
+Use strict wording for every file:
+
+```text
+Keep the canvas size, product position, crop, scale, silhouette, perspective, and all part boundaries exactly identical to the reference image. Do not redraw, recenter, resize, rotate, stylize, or alter the product shape. This is a technical map for a mockup renderer, not a finished render.
+```
+
+## Common Failures
+
+- Base map has baked gray fog, making black colors look plastic.
+- Soft light or sheen map behaves like glossy specular.
+- Micrograin map contains scratches or dirt, making products look damaged.
+- Edge AO contains broad shadows, making recolored products muddy.
+- Part masks are generated from a different crop or canvas.
+- Black matte is rendered as solid black because the material model has no visible low-reflectance light response.
+- Matte is too flat because soft light overpowers form shadow and micrograin.
+- Form shadow looks like an x-ray because the renderer and asset disagree on shadow polarity.
+
+## Rollout Plan
+
+1. Use BND877M as the Matte V2 proof product.
+2. Keep the existing `part_*`, `shadow`, and `edge_ao` maps if they align correctly.
+3. Regenerate `base`, `soft_light`, `micrograin`, and `sheen` if the proof still looks smoky or glossy.
+4. Apply the same asset pack structure to future matte products.
+5. Add automated matte map quality checks after two or three products confirm the target look.
