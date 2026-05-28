@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
-import { getQuickColorOptions, resolveColorOption } from "@/lib/services/color-option.service";
+import {
+  getQuickColorOptions,
+  QUICK_BLACK_CODE,
+  resolveColorOption
+} from "@/lib/services/color-option.service";
 import {
   isColorLockedFinish,
   productFinishLabels,
@@ -217,8 +221,12 @@ function resolveRenderablePartFinishSelection(
   );
 }
 
-function getFallbackPantoneCode(template: TemplatePublicDto, part: TemplatePublicDto["colorParts"][number]) {
-  return part.defaultPantoneCode || template.pantoneOptions[0]?.code || "";
+function getFallbackPantoneCode() {
+  return QUICK_BLACK_CODE;
+}
+
+function buildInitialPartPantones(template: TemplatePublicDto) {
+  return Object.fromEntries(template.colorParts.map((part) => [part.id, QUICK_BLACK_CODE]));
 }
 
 function buildSelectedPartPantones(
@@ -230,7 +238,7 @@ function buildSelectedPartPantones(
     const selectedFinish = resolveRenderablePartFinishSelection(template, part, partFinishes[part.id]);
     const pantoneCode =
       partPantones[part.id] ||
-      (isColorLockedFinish(selectedFinish) ? getFallbackPantoneCode(template, part) : "");
+      (isColorLockedFinish(selectedFinish) ? getFallbackPantoneCode() : "");
     const pantone = resolveColorOption(template.pantoneOptions, pantoneCode);
     if (!pantone) {
       throw new Error(`INVALID_PANTONE: Missing or invalid Pantone selection for ${part.label}.`);
@@ -2540,13 +2548,7 @@ export default function MockupGenerator({
     setExpandedPartId(nextTemplate.colorParts[0]?.id || null);
     setFocusedPartId(nextTemplate.colorParts[0]?.id || null);
     setSelectedCategory(normalizeProductCategory(nextTemplate.category));
-    setPartPantones(
-      Object.fromEntries(
-        nextTemplate.colorParts
-          .filter((part) => part.defaultPantoneCode)
-          .map((part) => [part.id, part.defaultPantoneCode!])
-      )
-    );
+    setPartPantones(buildInitialPartPantones(nextTemplate));
     setPartFinishes(buildInitialPartFinishes(nextTemplate));
     setLogoPrintColor(nextTemplate.defaultLogoPrintColor || "");
     setPrintingMethod("");
