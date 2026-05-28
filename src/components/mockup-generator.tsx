@@ -150,6 +150,12 @@ type LayeredMaterialMapSourcesByFinish = Partial<
   Record<ProductFinishOption, LayeredMaterialMapSources>
 >;
 
+type RenderableAssetSet = {
+  finishBaseImages: Partial<Record<ProductFinishOption, string>>;
+  materialMaps: Partial<Record<ProductFinishOption, Record<string, string>>>;
+  fallbackFinish: ProductFinishOption;
+};
+
 const layeredMaterialMapCache = new Map<string, LayeredMaterialMaps>();
 const maxLayeredMaterialMapCacheEntries = 12;
 const layeredFinishSourceCache = new Map<string, LayeredFinishSource>();
@@ -192,6 +198,75 @@ function getRenderableFinishBaseImages(template: TemplatePublicDto) {
   return template.layeredRender?.enabled
     ? template.layeredRender.finishBaseImages
     : ({ matte: template.baseImageUrl } satisfies Partial<Record<ProductFinishOption, string>>);
+}
+
+function getSelectedRenderableFinishes(
+  template: TemplatePublicDto,
+  selectedPartPantones: SelectedPartPantone[]
+) {
+  const fallbackFinish = template.layeredRender?.enabled ? template.layeredRender.fallbackFinish : "matte";
+  const selectedFinishes = new Set<ProductFinishOption>([fallbackFinish]);
+  for (const selection of selectedPartPantones) {
+    selectedFinishes.add(selection.selectedFinish || fallbackFinish);
+  }
+  return Array.from(selectedFinishes);
+}
+
+function buildRenderableAssetSet(
+  template: TemplatePublicDto,
+  selectedPartPantones: SelectedPartPantone[]
+): RenderableAssetSet {
+  const finishBaseImages = getRenderableFinishBaseImages(template);
+  const fallbackFinish = template.layeredRender?.enabled ? template.layeredRender.fallbackFinish : "matte";
+  const selectedFinishes = getSelectedRenderableFinishes(template, selectedPartPantones);
+
+  return {
+    finishBaseImages: Object.fromEntries(
+      selectedFinishes.flatMap((finish) => {
+        const assetUrl = finishBaseImages[finish];
+        return assetUrl ? [[finish, assetUrl]] : [];
+      })
+    ) as Partial<Record<ProductFinishOption, string>>,
+    materialMaps: Object.fromEntries(
+      selectedFinishes.flatMap((finish) => {
+        const mapSet = template.layeredRender?.materialMaps?.[finish];
+        return mapSet ? [[finish, mapSet]] : [];
+      })
+    ) as Partial<Record<ProductFinishOption, Record<string, string>>>,
+    fallbackFinish
+  };
+}
+
+function preloadImage(source: string) {
+  void loadImage(source).catch(() => undefined);
+}
+
+function preloadTemplateRenderAssets(template: TemplatePublicDto) {
+  const renderableAssets = buildRenderableAssetSet(
+    template,
+    template.colorParts.map((part) => ({
+      partId: part.id,
+      partLabel: part.label,
+      partDescription: part.description,
+      instructionCue: part.instructionCue,
+      instructionColorHex: part.instructionColorHex,
+      partMaskImageUrl: part.partMaskImageUrl,
+      pantoneCode: QUICK_BLACK_CODE,
+      pantone: { code: QUICK_BLACK_CODE, label: "Black", previewHex: "#000000" },
+      selectedFinish: resolveRenderablePartFinishSelection(template, part, part.defaultFinish)
+    }))
+  );
+
+  const selectedFinishKeys = new Set(Object.keys(renderableAssets.finishBaseImages));
+  const selectedMapKeys = new Set(Object.keys(renderableAssets.materialMaps));
+  Object.entries(getRenderableFinishBaseImages(template)).forEach(([finish, assetUrl]) => {
+    if (!assetUrl || selectedFinishKeys.has(finish)) return;
+    preloadImage(toAbsoluteAssetUrl(assetUrl));
+  });
+  Object.entries(template.layeredRender?.materialMaps || {}).forEach(([finish, mapSet]) => {
+    if (selectedMapKeys.has(finish)) return;
+    Object.values(mapSet).forEach((assetUrl) => preloadImage(toAbsoluteAssetUrl(assetUrl)));
+  });
 }
 
 function getRenderablePartFinishes(
@@ -2221,20 +2296,20 @@ async function renderLayeredProductMockup(params: {
   selectedPartPantones: SelectedPartPantone[];
 }) {
   const layeredRender = params.template.layeredRender;
-  const finishBaseImages = layeredRender?.enabled
-    ? layeredRender.finishBaseImages
-    : ({ matte: params.template.baseImageUrl } satisfies Partial<Record<ProductFinishOption, string>>);
-  const fallbackFinish = layeredRender?.enabled ? layeredRender.fallbackFinish : "matte";
+  const renderableAssets = buildRenderableAssetSet(params.template, params.selectedPartPantones);
+  const finishBaseImages = renderableAssets.finishBaseImages;
+  const fallbackFinish = renderableAssets.fallbackFinish;
   const finishEntries = Object.entries(finishBaseImages) as Array<
     [ProductFinishOption, string]
   >;
-  const fallbackFinishUrl = finishBaseImages[fallbackFinish] || params.template.baseImageUrl;
+  const fallbackFinishUrl =
+    finishBaseImages[fallbackFinish] || getRenderableFinishBaseImages(params.template)[fallbackFinish];
   if (!fallbackFinishUrl) {
     throw new Error("LAYERED_RENDER_MISSING_FALLBACK: The fallback finish image is missing.");
   }
 
   const partMaskEntries = Object.entries(layeredRender?.partMasks || {});
-  const materialMapEntries = Object.entries(layeredRender?.materialMaps || {}) as Array<
+  const materialMapEntries = Object.entries(renderableAssets.materialMaps) as Array<
     [ProductFinishOption, Record<string, string>]
   >;
   const needsInstructionMaskFallback = params.selectedPartPantones.some(
@@ -2648,6 +2723,16 @@ export default function MockupGenerator({
       isCancelled = true;
     };
   }, [productSlug, initialTemplate]);
+
+  useEffect(() => {
+    if (!template) return;
+
+    const handle = window.setTimeout(() => {
+      preloadTemplateRenderAssets(template);
+    }, 0);
+
+    return () => window.clearTimeout(handle);
+  }, [template]);
 
   function selectProductCategory(category: (typeof productCategoryOptions)[number]) {
     if (!categoryCounts.get(category)) return;

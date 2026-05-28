@@ -169,6 +169,19 @@ const templateSchema = z.object({
 
 type TemplateConfig = z.infer<typeof templateSchema>;
 
+type TemplateSummaryConfig = Pick<
+  TemplateConfig,
+  | "id"
+  | "slug"
+  | "name"
+  | "category"
+  | "description"
+  | "size"
+  | "assetFolderPublicPath"
+  | "baseImageFileName"
+  | "instructionImageFileName"
+>;
+
 function assertSafeSlug(productSlug: string) {
   if (!slugPattern.test(productSlug)) {
     throw new AppError("PRODUCT_TEMPLATE_NOT_FOUND", "The product template could not be found.", 404);
@@ -239,6 +252,21 @@ async function readTemplateConfig(productSlug: string): Promise<TemplateConfig> 
   } catch {
     throw new AppError("PRODUCT_TEMPLATE_NOT_FOUND", "The product template could not be found.", 404);
   }
+}
+
+async function readTemplateSummaryConfig(productSlug: string): Promise<TemplateSummaryConfig> {
+  const templateConfig = await readTemplateConfig(productSlug);
+  return {
+    id: templateConfig.id,
+    slug: templateConfig.slug,
+    name: templateConfig.name,
+    category: templateConfig.category,
+    description: templateConfig.description,
+    size: templateConfig.size,
+    assetFolderPublicPath: templateConfig.assetFolderPublicPath,
+    baseImageFileName: templateConfig.baseImageFileName,
+    instructionImageFileName: templateConfig.instructionImageFileName
+  };
 }
 
 async function exists(target: string) {
@@ -462,9 +490,26 @@ export function toTemplateSummaryDto(template: ResolvedProductTemplate): Templat
 
 export async function listTemplateSummaries(): Promise<TemplateSummaryDto[]> {
   const productSlugs = await listTemplateSlugs();
-  const templates = await Promise.all(productSlugs.map((productSlug) => loadTemplate(productSlug)));
+  const templateSummaries = await Promise.all(
+    productSlugs.map(async (productSlug) => {
+      const template = await readTemplateSummaryConfig(productSlug);
+      return {
+        id: template.id,
+        slug: template.slug,
+        name: template.name,
+        category: template.category,
+        description: template.description,
+        size: template.size,
+        baseImageUrl: toPublicAssetUrl(template.assetFolderPublicPath, template.baseImageFileName),
+        instructionImageUrl: toPublicAssetUrl(
+          template.assetFolderPublicPath,
+          template.instructionImageFileName
+        )
+      } satisfies TemplateSummaryDto;
+    })
+  );
 
-  return templates.map(toTemplateSummaryDto);
+  return templateSummaries;
 }
 
 export function toTemplatePublicDto(template: ResolvedProductTemplate): TemplatePublicDto {
