@@ -1141,12 +1141,6 @@ input[type="file"].input-shell::file-selector-button {
   accent-color: var(--color-obsidian);
 }
 
-.indicator-anchor-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-12);
-}
-
 .indicator-visual-editor {
   display: grid;
   gap: var(--spacing-12);
@@ -1279,35 +1273,6 @@ input[type="file"].input-shell::file-selector-button {
 
 .indicator-visual-anchor.is-active {
   z-index: 2;
-}
-
-.indicator-anchor-card {
-  display: grid;
-  gap: var(--spacing-12);
-  padding: var(--spacing-12);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: var(--radius-card);
-  background: #ffffff;
-}
-
-.indicator-anchor-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-12);
-}
-
-.indicator-anchor-title {
-  margin: 0;
-  color: var(--color-obsidian);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.indicator-anchor-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--spacing-12);
 }
 
 .repeater-grid,
@@ -2529,10 +2494,6 @@ input[type="file"].input-shell::file-selector-button {
 
   .instruction-toggle-button {
     align-self: flex-end;
-  }
-
-  .indicator-anchor-grid {
-    grid-template-columns: 1fr;
   }
 
   .part-indicator-caption {

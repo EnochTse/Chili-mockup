@@ -39,22 +39,6 @@ export default async function HomePage() {
           </div>
         </div>
 
-        <div className="hero-aside-stack">
-          <div className="hero-stat-grid" aria-label="Library overview">
-            <article className="stat-card">
-              <span className="stat-label">Templates</span>
-              <strong className="stat-value">{templates.length}</strong>
-            </article>
-            <article className="stat-card">
-              <span className="stat-label">Workflow</span>
-              <strong className="stat-value">3 steps</strong>
-            </article>
-            <article className="stat-card">
-              <span className="stat-label">Setup mode</span>
-              <strong className="stat-value">Local + Netlify</strong>
-            </article>
-          </div>
-        </div>
       </section>
 
       <section className="section-heading-row">
