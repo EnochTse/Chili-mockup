@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { TemplatePublicDto } from "@/lib/types";
+import type { TemplatePublicDto, TemplateSummaryDto } from "@/lib/types";
 
 type LiveTemplateStatus = "draft" | "published";
 
@@ -23,8 +23,14 @@ type LiveSaveResult = {
   template: TemplatePublicDto;
 };
 
+type SaveLiveTemplateVersionOptions = {
+  version?: number;
+};
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+const supabaseStorageBucket =
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET?.trim() || "mockup-assets";
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -32,7 +38,11 @@ export function isLiveTemplateDatabaseConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
 }
 
-function getSupabaseClient() {
+export function getLiveTemplateStorageBucketName() {
+  return supabaseStorageBucket;
+}
+
+export function getLiveSupabaseClient() {
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
       "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
@@ -82,10 +92,43 @@ function collectLatestTemplates(
   );
 }
 
+function toTemplateSummaryDto(template: TemplatePublicDto): TemplateSummaryDto {
+  return {
+    id: template.id,
+    slug: template.slug,
+    name: template.name,
+    category: template.category,
+    description: template.description,
+    size: template.size,
+    baseImageUrl: template.baseImageUrl,
+    instructionImageUrl: template.instructionImageUrl
+  };
+}
+
+function collectPublishedTemplateSummaries(
+  rows: LiveTemplateRow[] | null,
+  fallbackSummaries: TemplateSummaryDto[] = []
+) {
+  const summariesBySlug = new Map(fallbackSummaries.map((template) => [template.slug, template]));
+  const seenLiveSlugs = new Set<string>();
+
+  for (const row of rows || []) {
+    if (seenLiveSlugs.has(row.slug)) continue;
+
+    const liveTemplate = hydrateLiveTemplate(row.template);
+    seenLiveSlugs.add(row.slug);
+    summariesBySlug.set(row.slug, toTemplateSummaryDto(liveTemplate));
+  }
+
+  return Array.from(summariesBySlug.values()).sort((left, right) =>
+    left.name.localeCompare(right.name)
+  );
+}
+
 export async function listLatestLiveTemplates(fallbackTemplates: TemplatePublicDto[] = []) {
   if (!isLiveTemplateDatabaseConfigured()) return [];
 
-  const client = getSupabaseClient();
+  const client = getLiveSupabaseClient();
   const { data, error } = await client
     .from("product_template_versions")
     .select("id, slug, version, status, template, updated_at")
@@ -99,13 +142,32 @@ export async function listLatestLiveTemplates(fallbackTemplates: TemplatePublicD
   return collectLatestTemplates(data as LiveTemplateRow[] | null, fallbackTemplates);
 }
 
+export async function listPublishedLiveTemplateSummaries(
+  fallbackSummaries: TemplateSummaryDto[] = []
+) {
+  if (!isLiveTemplateDatabaseConfigured()) return fallbackSummaries;
+
+  const client = getLiveSupabaseClient();
+  const { data, error } = await client
+    .from("product_template_versions")
+    .select("id, slug, version, status, template, updated_at")
+    .eq("status", "published")
+    .order("version", { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to load published live templates: ${error.message}`);
+  }
+
+  return collectPublishedTemplateSummaries(data as LiveTemplateRow[] | null, fallbackSummaries);
+}
+
 export async function getPublishedLiveTemplate(
   slug: string,
   fallbackTemplate?: TemplatePublicDto
 ) {
   if (!isLiveTemplateDatabaseConfigured()) return null;
 
-  const client = getSupabaseClient();
+  const client = getLiveSupabaseClient();
   const { data, error } = await client
     .from("product_template_versions")
     .select("id, slug, version, status, template, updated_at")
@@ -141,15 +203,24 @@ async function getNextVersion(client: SupabaseClient, slug: string) {
   return ((data as { version?: number } | null)?.version || 0) + 1;
 }
 
+export async function getNextLiveTemplateVersion(slug: string) {
+  if (!slug) {
+    throw new Error("A product slug is required before reserving a Supabase version.");
+  }
+
+  return getNextVersion(getLiveSupabaseClient(), slug);
+}
+
 export async function saveLiveTemplateVersion(
   template: TemplatePublicDto,
-  status: LiveTemplateStatus
+  status: LiveTemplateStatus,
+  options: SaveLiveTemplateVersionOptions = {}
 ): Promise<LiveSaveResult> {
   if (!template.slug) {
     throw new Error("A product slug is required before saving to Supabase.");
   }
 
-  const client = getSupabaseClient();
+  const client = getLiveSupabaseClient();
   const updatedAt = new Date().toISOString();
 
   const { error: templateError } = await client.from("product_templates").upsert(
@@ -166,7 +237,7 @@ export async function saveLiveTemplateVersion(
     throw new Error(`Failed to save product template row: ${templateError.message}`);
   }
 
-  const version = await getNextVersion(client, template.slug);
+  const version = options.version ?? (await getNextVersion(client, template.slug));
   const { data: versionRow, error: versionError } = await client
     .from("product_template_versions")
     .insert({

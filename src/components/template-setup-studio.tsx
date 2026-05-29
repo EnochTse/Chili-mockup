@@ -15,10 +15,15 @@ import {
 } from "@/lib/services/product-category.service";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import {
+  getNextLiveTemplateVersion,
   isLiveTemplateDatabaseConfigured,
   listLatestLiveTemplates,
   saveLiveTemplateVersion
 } from "@/lib/services/live-template-database.service";
+import {
+  uploadLiveTemplateAssets,
+  type LiveTemplateUploadedAssets
+} from "@/lib/services/live-template-storage.service";
 import type {
   LayeredRenderConfig,
   LayeredRenderFinishRule,
@@ -259,24 +264,10 @@ function mergeTemplates(
   );
 }
 
-function hasPendingAssetUploads(params: {
-  formState: EditorFormState;
-  partMaskFiles: Record<string, File | null>;
-  finishBaseFiles: Partial<Record<ProductFinishOption, File | null>>;
-  printingAreaFiles: Record<string, File | null>;
-}) {
-  return Boolean(
-    params.formState.baseImageFile ||
-      params.formState.instructionImageFile ||
-      Object.values(params.partMaskFiles).some(Boolean) ||
-      Object.values(params.finishBaseFiles).some(Boolean) ||
-      Object.values(params.printingAreaFiles).some(Boolean)
-  );
-}
-
 function buildLiveLayeredRender(
   formState: EditorFormState,
-  sourceTemplate: TemplatePublicDto
+  sourceTemplate: TemplatePublicDto | null,
+  uploadedAssets: LiveTemplateUploadedAssets
 ): LayeredRenderConfig | undefined {
   if (!formState.layeredRenderEnabled) return undefined;
 
@@ -288,20 +279,27 @@ function buildLiveLayeredRender(
           width: outputWidth,
           height: outputHeight
         }
-      : sourceTemplate.layeredRender?.outputSize;
+      : sourceTemplate?.layeredRender?.outputSize;
   const partMasks = Object.fromEntries(
     formState.colorParts
-      .filter((part) => part.partMaskImageFileName)
-      .map((part) => [part.id, part.partMaskImageFileName!])
+      .map((part) => [
+        part.id,
+        uploadedAssets.partMaskImageUrls[part.id] || part.partMaskImageFileName || ""
+      ])
+      .filter(([, assetUrl]) => Boolean(assetUrl))
   );
+  const finishBaseImages = {
+    ...formState.layeredFinishBaseImages,
+    ...uploadedAssets.finishBaseImageUrls
+  };
 
   return {
     enabled: true,
     mode: "local-layered",
     ...(outputSize ? { outputSize } : {}),
     fallbackFinish: formState.layeredFallbackFinish,
-    finishBaseImages: formState.layeredFinishBaseImages,
-    ...(sourceTemplate.layeredRender?.materialMaps
+    finishBaseImages,
+    ...(sourceTemplate?.layeredRender?.materialMaps
       ? { materialMaps: sourceTemplate.layeredRender.materialMaps }
       : {}),
     partMasks,
@@ -312,15 +310,15 @@ function buildLiveLayeredRender(
 function buildLiveTemplateFromFormState(
   formState: EditorFormState,
   sourceTemplate: TemplatePublicDto | null,
-  fallbackPantoneOptions: TemplatePublicDto["pantoneOptions"]
+  fallbackPantoneOptions: TemplatePublicDto["pantoneOptions"],
+  uploadedAssets: LiveTemplateUploadedAssets
 ): TemplatePublicDto {
-  if (!sourceTemplate) {
-    throw new Error(
-      "Supabase database phase only edits existing products. Add new product images in the repo first."
-    );
-  }
-
-  const sourcePartsById = new Map(sourceTemplate.colorParts.map((part) => [part.id, part]));
+  const sourcePartsById = new Map((sourceTemplate?.colorParts || []).map((part) => [part.id, part]));
+  const printingAreaImages = {
+    ...(sourceTemplate?.logoPlacement.printingAreaImages || {}),
+    ...formState.logoPrintingAreaImages,
+    ...uploadedAssets.printingAreaImageUrls
+  };
 
   return {
     id: formState.slug,
@@ -330,26 +328,38 @@ function buildLiveTemplateFromFormState(
     description: formState.description,
     size: formState.size || undefined,
     specifications: formState.specifications.filter((item) => item.label || item.value),
-    baseImageUrl: formState.baseImageUrl || sourceTemplate.baseImageUrl,
-    instructionImageUrl: formState.instructionImageUrl || sourceTemplate.instructionImageUrl,
+    baseImageUrl: uploadedAssets.baseImageUrl || formState.baseImageUrl || sourceTemplate?.baseImageUrl || "",
+    instructionImageUrl:
+      uploadedAssets.instructionImageUrl ||
+      formState.instructionImageUrl ||
+      sourceTemplate?.instructionImageUrl ||
+      "",
     usageType: "visual_reference_only",
-    allowedLogoPrintColors: sourceTemplate.allowedLogoPrintColors || defaultLogoPrintColors,
-    defaultLogoPrintColor: sourceTemplate.defaultLogoPrintColor || "white",
-    allowedPrintingMethods: sourceTemplate.allowedPrintingMethods || defaultPrintingMethods,
-    pantoneOptions: sourceTemplate.pantoneOptions || fallbackPantoneOptions,
+    allowedLogoPrintColors: sourceTemplate?.allowedLogoPrintColors || defaultLogoPrintColors,
+    defaultLogoPrintColor: sourceTemplate?.defaultLogoPrintColor || "white",
+    allowedPrintingMethods: sourceTemplate?.allowedPrintingMethods || defaultPrintingMethods,
+    pantoneOptions: sourceTemplate?.pantoneOptions || fallbackPantoneOptions,
     colorParts: formState.colorParts.map((part) => ({
       ...part,
-      partMaskImageUrl: sourcePartsById.get(part.id)?.partMaskImageUrl
+      partMaskImageUrl:
+        uploadedAssets.partMaskImageUrls[part.id] ||
+        part.partMaskImageFileName ||
+        sourcePartsById.get(part.id)?.partMaskImageUrl
     })),
-    layeredRender: buildLiveLayeredRender(formState, sourceTemplate),
+    layeredRender: buildLiveLayeredRender(formState, sourceTemplate, uploadedAssets),
     logoPlacement: {
-      ...sourceTemplate.logoPlacement,
+      ...(sourceTemplate?.logoPlacement || {
+        description: "Keep logo inside the highlighted print area.",
+        maxWidthMm: 40,
+        maxHeightMm: 12,
+        notes: "Final artwork, logo size, and production details must be confirmed by the Chili design team."
+      }),
       orientationPreset: formState.logoOrientationPreset,
-      ...(Object.keys(formState.logoPrintingAreaImages).length
-        ? { printingAreaImages: formState.logoPrintingAreaImages }
+      ...(Object.keys(printingAreaImages).length
+        ? { printingAreaImages }
         : {})
     },
-    constraints: sourceTemplate.constraints || defaultTemplateConstraints
+    constraints: sourceTemplate?.constraints || defaultTemplateConstraints
   };
 }
 
@@ -870,9 +880,9 @@ export default function TemplateSetupStudio({
   }
 
   async function handleLiveTemplateSave(status: "draft" | "published") {
-    if (isNewTemplate || !selectedTemplate) {
+    if (isNewTemplate && !selectedTemplate) {
       setSaveError(
-        "Supabase database phase can edit existing products only. Add new product images in the repo first."
+        "Live image upload is ready for existing products. Brand-new live-only products need the next routing upgrade before they can open on the public mockup site."
       );
       setSaveMessage(null);
       return;
@@ -884,32 +894,30 @@ export default function TemplateSetupStudio({
       return;
     }
 
-    if (
-      hasPendingAssetUploads({
-        formState,
-        partMaskFiles,
-        finishBaseFiles,
-        printingAreaFiles
-      })
-    ) {
-      setSaveError(
-        "This first Supabase phase saves database settings only. Keep image uploads unchanged until Storage is connected."
-      );
-      setSaveMessage(null);
-      return;
-    }
-
     setIsSaving(true);
     setSaveError(null);
     setSaveMessage(null);
 
     try {
+      const nextVersion = await getNextLiveTemplateVersion(formState.slug);
+      const uploadedAssets = await uploadLiveTemplateAssets({
+        productSlug: formState.slug,
+        version: nextVersion,
+        baseImageFile: formState.baseImageFile,
+        instructionImageFile: formState.instructionImageFile,
+        partMaskFiles,
+        finishBaseFiles,
+        printingAreaFiles
+      });
       const liveTemplate = buildLiveTemplateFromFormState(
         formState,
         selectedTemplate,
-        initialTemplates[0]?.pantoneOptions || []
+        initialTemplates[0]?.pantoneOptions || [],
+        uploadedAssets
       );
-      const savedVersion = await saveLiveTemplateVersion(liveTemplate, status);
+      const savedVersion = await saveLiveTemplateVersion(liveTemplate, status, {
+        version: nextVersion
+      });
       const nextTemplates = mergeTemplates(templates, [savedVersion.template]);
 
       setTemplates(nextTemplates);
@@ -1153,9 +1161,9 @@ export default function TemplateSetupStudio({
             </div>
             {liveDatabaseEnabled ? (
               <p className="fine-print">
-                Live database mode saves template settings only. Uploading new images will be
-                enabled after Supabase Storage is connected. Add Supabase Auth/RLS before sharing
-                this setup URL publicly.
+                Live database mode now saves template settings plus uploaded images to Supabase.
+                Existing product pages can update without redeploy. Add Supabase Auth/RLS before
+                sharing this setup URL publicly.
               </p>
             ) : !canSaveTemplate ? (
               <p className="fine-print">

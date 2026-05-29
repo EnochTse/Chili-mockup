@@ -17,8 +17,12 @@ This project deploys to Netlify from GitHub as a static export. Image coloring a
 1. Connect the GitHub repo `EnochTse/Chili-mockup` in Netlify.
 2. Keep the build command as `npm run build:netlify`.
 3. Keep the publish directory as `out`.
-4. Set `APP_BASE_URL` to the branch deploy or production site URL if needed.
-5. Trigger a branch deploy.
+4. If using Supabase live template storage, set:
+   `NEXT_PUBLIC_SUPABASE_URL`
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   `NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET`
+5. Set `APP_BASE_URL` to the branch deploy or production site URL if needed.
+6. Trigger a branch deploy.
 
 ## Notes
 
