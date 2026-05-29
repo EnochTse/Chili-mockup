@@ -20,7 +20,8 @@ import {
 } from "@/lib/services/product-category.service";
 import {
   getPublishedLiveTemplate,
-  isLiveTemplateDatabaseConfigured
+  isLiveTemplateDatabaseConfigured,
+  listPublishedLiveTemplateSummaries
 } from "@/lib/services/live-template-database.service";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import type {
@@ -2563,6 +2564,7 @@ export default function MockupGenerator({
   availableTemplates?: TemplateSummaryDto[];
 }) {
   const router = useRouter();
+  const [availableTemplateOptions, setAvailableTemplateOptions] = useState(availableTemplates);
   const [template, setTemplate] = useState<TemplatePublicDto | null>(initialTemplate || null);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [isTemplateLoading, setIsTemplateLoading] = useState(!initialTemplate);
@@ -2689,18 +2691,84 @@ export default function MockupGenerator({
   }
 
   useEffect(() => {
+    if (!isLiveTemplateDatabaseConfigured()) return;
+
+    let isCancelled = false;
+
+    listPublishedLiveTemplateSummaries(availableTemplates)
+      .then((liveTemplates) => {
+        if (!isCancelled) {
+          setAvailableTemplateOptions(liveTemplates);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [availableTemplates]);
+
+  useEffect(() => {
     if (initialTemplate) {
       applyTemplateState(initialTemplate);
       return;
     }
 
+    if (!productSlug) {
+      setTemplate(null);
+      setTemplateError("Choose a product to open its live mockup page.");
+      setIsTemplateLoading(false);
+      setExpandedPartId(null);
+      setFocusedPartId(null);
+      setPartFinishes({});
+      return;
+    }
+
+    if (!isLiveTemplateDatabaseConfigured()) {
+      setTemplate(null);
+      setTemplateError("This live product route needs Supabase to load published templates.");
+      setIsTemplateLoading(false);
+      setExpandedPartId(null);
+      setFocusedPartId(null);
+      setPartFinishes({});
+      return;
+    }
+
+    let isCancelled = false;
+
     setTemplate(null);
-    setTemplateError("This product has not been configured for mockup generation.");
-    setIsTemplateLoading(false);
+    setTemplateError(null);
+    setIsTemplateLoading(true);
     setExpandedPartId(null);
     setFocusedPartId(null);
     setPartFinishes({});
-  }, [productSlug]);
+
+    getPublishedLiveTemplate(productSlug)
+      .then((liveTemplate) => {
+        if (isCancelled) return;
+
+        if (!liveTemplate) {
+          setTemplate(null);
+          setTemplateError("This product has not been published yet.");
+          setIsTemplateLoading(false);
+          return;
+        }
+
+        applyTemplateState(liveTemplate);
+      })
+      .catch((error) => {
+        if (isCancelled) return;
+        setTemplate(null);
+        setTemplateError(
+          error instanceof Error ? error.message : "Failed to load the live mockup template."
+        );
+        setIsTemplateLoading(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [productSlug, initialTemplate]);
 
   useEffect(() => {
     if (!initialTemplate || !isLiveTemplateDatabaseConfigured()) return;
@@ -2738,7 +2806,7 @@ export default function MockupGenerator({
     if (!categoryCounts.get(category)) return;
 
     setSelectedCategory(category);
-    const nextTemplate = availableTemplates.find(
+    const nextTemplate = availableTemplateOptions.find(
       (availableTemplate) => normalizeProductCategory(availableTemplate.category) === category
     );
     if (nextTemplate && normalizeProductCategory(template?.category) !== category) {
@@ -3124,19 +3192,19 @@ export default function MockupGenerator({
     : "Not selected";
   const filteredAvailableTemplates = useMemo(
     () =>
-      availableTemplates.filter(
+      availableTemplateOptions.filter(
         (availableTemplate) => normalizeProductCategory(availableTemplate.category) === selectedCategory
       ),
-    [availableTemplates, selectedCategory]
+    [availableTemplateOptions, selectedCategory]
   );
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const availableTemplate of availableTemplates) {
+    for (const availableTemplate of availableTemplateOptions) {
       const category = normalizeProductCategory(availableTemplate.category);
       counts.set(category, (counts.get(category) || 0) + 1);
     }
     return counts;
-  }, [availableTemplates]);
+  }, [availableTemplateOptions]);
 
   const isLayeredTemplate = Boolean(template);
   const canGenerate =
@@ -3362,7 +3430,7 @@ export default function MockupGenerator({
             </span>
           </Link>
           <div className="site-bar-actions">
-            {availableTemplates.length > 0 ? (
+            {availableTemplateOptions.length > 0 ? (
               <div className="nav-product-controls">
                 <nav className="category-filter-bar" aria-label="Product categories">
                   {productCategoryOptions.map((category) => {

@@ -7,3 +7,8 @@
   NPM_FLAGS = "--include=dev"
   NODE_VERSION = "22"
   NEXT_OUTPUT_EXPORT = "true"
+
+[[redirects]]
+  from = "/mockup/*"
+  to = "/mockup?slug=:splat"
+  status = 200
