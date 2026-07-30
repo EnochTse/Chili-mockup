@@ -10,6 +10,7 @@ import {
   resolveColorOption
 } from "@/lib/services/color-option.service";
 import {
+  defaultLayeredFinishRules,
   isColorLockedFinish,
   productFinishLabels,
   resolvePartFinishSelection
@@ -23,6 +24,11 @@ import {
   isLiveTemplateDatabaseConfigured,
   listPublishedLiveTemplateSummaries
 } from "@/lib/services/live-template-database.service";
+import {
+  getLocalLibraryClientSnapshot,
+  getLocalLibraryTemplate,
+  isLocalStudioBrowser
+} from "@/lib/services/local-library.client";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
 import type {
   LayeredMaterialMapKey,
@@ -74,6 +80,19 @@ const defaultLogoTransform = { offsetX: 0, offsetY: 0, scale: 1, rotation: 0 };
 const logoOffsetLimit = 0.35;
 const imageLoadCache = new Map<string, Promise<HTMLImageElement>>();
 const logoQuarterTurnDegrees = 90;
+
+function mergeTemplateSummaries(
+  baseTemplates: TemplateSummaryDto[],
+  overridingTemplates: TemplateSummaryDto[]
+) {
+  const templatesBySlug = new Map(baseTemplates.map((template) => [template.slug, template]));
+  for (const template of overridingTemplates) {
+    templatesBySlug.set(template.slug, template);
+  }
+  return Array.from(templatesBySlug.values()).sort((left, right) =>
+    left.name.localeCompare(right.name)
+  );
+}
 
 type PixelRect = {
   x: number;
@@ -163,6 +182,13 @@ const layeredFinishSourceCache = new Map<string, LayeredFinishSource>();
 const maxLayeredFinishSourceCacheEntries = 6;
 const layeredMaterialMapSourceCache = new Map<string, LayeredMaterialMapSources>();
 const maxLayeredMaterialMapSourceCacheEntries = 6;
+const runtimeMaterialMapKeys: Array<Exclude<LayeredMaterialMapKey, "base">> = [
+  "shadow",
+  "highlight",
+  "texture",
+  "specular",
+  "edgeAo"
+];
 
 type LogoTransform = {
   offsetX: number;
@@ -201,6 +227,19 @@ function getRenderableFinishBaseImages(template: TemplatePublicDto) {
     : ({ matte: template.baseImageUrl } satisfies Partial<Record<ProductFinishOption, string>>);
 }
 
+function getRuntimeMaterialMapSet(
+  mapSet: Partial<Record<LayeredMaterialMapKey, string>> | undefined
+) {
+  if (!mapSet) return null;
+  const runtimeMapSet = Object.fromEntries(
+    runtimeMaterialMapKeys.flatMap((key) =>
+      mapSet[key] ? [[key, mapSet[key]]] : []
+    )
+  ) as Partial<Record<Exclude<LayeredMaterialMapKey, "base">, string>>;
+
+  return Object.keys(runtimeMapSet).length ? runtimeMapSet : null;
+}
+
 function getSelectedRenderableFinishes(
   template: TemplatePublicDto,
   selectedPartPantones: SelectedPartPantone[]
@@ -230,7 +269,9 @@ function buildRenderableAssetSet(
     ) as Partial<Record<ProductFinishOption, string>>,
     materialMaps: Object.fromEntries(
       selectedFinishes.flatMap((finish) => {
-        const mapSet = template.layeredRender?.materialMaps?.[finish];
+        const mapSet = getRuntimeMaterialMapSet(
+          template.layeredRender?.materialMaps?.[finish]
+        );
         return mapSet ? [[finish, mapSet]] : [];
       })
     ) as Partial<Record<ProductFinishOption, Record<string, string>>>,
@@ -266,7 +307,9 @@ function preloadTemplateRenderAssets(template: TemplatePublicDto) {
   });
   Object.entries(template.layeredRender?.materialMaps || {}).forEach(([finish, mapSet]) => {
     if (selectedMapKeys.has(finish)) return;
-    Object.values(mapSet).forEach((assetUrl) => preloadImage(toAbsoluteAssetUrl(assetUrl)));
+    Object.values(getRuntimeMaterialMapSet(mapSet) || {}).forEach((assetUrl) =>
+      preloadImage(toAbsoluteAssetUrl(assetUrl))
+    );
   });
 }
 
@@ -302,7 +345,13 @@ function getFallbackPantoneCode() {
 }
 
 function buildInitialPartPantones(template: TemplatePublicDto) {
-  return Object.fromEntries(template.colorParts.map((part) => [part.id, QUICK_BLACK_CODE]));
+  return Object.fromEntries(
+    template.colorParts.map((part) => [
+      part.id,
+      resolveColorOption(template.pantoneOptions, part.defaultPantoneCode || "")?.code ||
+        QUICK_BLACK_CODE
+    ])
+  );
 }
 
 function buildSelectedPartPantones(
@@ -1158,14 +1207,6 @@ async function composeMockupPreview(params: {
   return canvas.toDataURL("image/png");
 }
 
-const defaultLayeredFinishRule = {
-  colorOpacity: 0.96,
-  blendMode: "source-over" as GlobalCompositeOperation,
-  highlightProtection: 0.22,
-  textureStrength: 0.14,
-  saturationBoost: 0.06
-};
-
 function getRelativeLuminanceLinear(color: LinearRgb) {
   return color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
 }
@@ -1435,7 +1476,10 @@ function createLayeredMaterialMapSources(
 function hasLayeredMaterialMapSources(
   materialMaps?: LayeredMaterialMapSources
 ) {
-  return Boolean(materialMaps && Object.values(materialMaps).some(Boolean));
+  return Boolean(
+    materialMaps &&
+      runtimeMaterialMapKeys.some((key) => Boolean(materialMaps[key]))
+  );
 }
 
 function setCachedLayeredMaterialMaps(cacheKey: string, maps: LayeredMaterialMaps) {
@@ -2363,7 +2407,7 @@ async function renderLayeredProductMockup(params: {
     Object.entries(finishBaseImages).map(([finish, assetUrl]) => [finish, assetUrl])
   ) as Partial<Record<ProductFinishOption, string>>;
   const materialMapSignatures = Object.fromEntries(
-    Object.entries(layeredRender?.materialMaps || {}).map(([finish, mapSet]) => [
+    Object.entries(renderableAssets.materialMaps).map(([finish, mapSet]) => [
       finish,
       Object.entries(mapSet)
         .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
@@ -2477,12 +2521,13 @@ async function renderLayeredProductMockup(params: {
 
     const finish = selection.selectedFinish || fallbackFinish;
     const finishSource = finishSources[finish] || fallbackSource;
-    const rule = layeredRender?.finishRules?.[finish] || defaultLayeredFinishRule;
+    const defaultFinishRule = defaultLayeredFinishRules[finish];
+    const rule = layeredRender?.finishRules?.[finish] || defaultFinishRule;
     const tint = hexToRgb(selection.pantone.previewHex);
     const isWhiteTint = isNearWhiteTint(tint);
     const highlightProtection =
-      rule.highlightProtection ?? defaultLayeredFinishRule.highlightProtection;
-    const textureStrength = rule.textureStrength ?? defaultLayeredFinishRule.textureStrength;
+      rule.highlightProtection ?? defaultFinishRule.highlightProtection ?? 0;
+    const textureStrength = rule.textureStrength ?? defaultFinishRule.textureStrength ?? 0;
     const profile = getLayeredMaterialProfile({
       finish,
       isWhiteTint,
@@ -2514,7 +2559,7 @@ async function renderLayeredProductMockup(params: {
       colorOpacity: rule.colorOpacity,
       highlightProtection,
       textureStrength,
-      saturationBoost: rule.saturationBoost ?? defaultLayeredFinishRule.saturationBoost
+      saturationBoost: rule.saturationBoost ?? defaultFinishRule.saturationBoost ?? 0
     });
 
     context.save();
@@ -2557,11 +2602,13 @@ function DebugRow({ label, value }: { label: string; value: unknown }) {
 export default function MockupGenerator({
   productSlug,
   initialTemplate,
-  availableTemplates = []
+  availableTemplates = [],
+  localChannel = "published"
 }: {
   productSlug: string;
   initialTemplate?: TemplatePublicDto;
   availableTemplates?: TemplateSummaryDto[];
+  localChannel?: "latest" | "published";
 }) {
   const router = useRouter();
   const [availableTemplateOptions, setAvailableTemplateOptions] = useState(availableTemplates);
@@ -2611,10 +2658,15 @@ export default function MockupGenerator({
   const [selectedCategory, setSelectedCategory] = useState(
     normalizeProductCategory(initialTemplate?.category)
   );
+  const [showLocalStudioLink, setShowLocalStudioLink] = useState(false);
 
   const showDebug =
     process.env.NODE_ENV === "development" ||
     process.env.NEXT_PUBLIC_SHOW_DEBUG === "true";
+
+  useEffect(() => {
+    setShowLocalStudioLink(isLocalStudioBrowser());
+  }, []);
 
   function applyTemplateState(nextTemplate: TemplatePublicDto) {
     setTemplate(nextTemplate);
@@ -2691,17 +2743,38 @@ export default function MockupGenerator({
   }
 
   useEffect(() => {
-    if (!isLiveTemplateDatabaseConfigured()) return;
-
     let isCancelled = false;
 
-    listPublishedLiveTemplateSummaries(availableTemplates)
-      .then((liveTemplates) => {
-        if (!isCancelled) {
-          setAvailableTemplateOptions(liveTemplates);
+    async function loadAvailableTemplates() {
+      let nextTemplates = availableTemplates;
+
+      if (isLiveTemplateDatabaseConfigured()) {
+        try {
+          const liveTemplates = await listPublishedLiveTemplateSummaries(availableTemplates);
+          nextTemplates = mergeTemplateSummaries(nextTemplates, liveTemplates);
+        } catch {
+          // The checked-in catalog remains available when Supabase cannot be reached.
         }
-      })
-      .catch(() => undefined);
+      }
+
+      if (isLocalStudioBrowser()) {
+        try {
+          const snapshot = await getLocalLibraryClientSnapshot();
+          nextTemplates = mergeTemplateSummaries(
+            nextTemplates,
+            snapshot.publishedSummaries
+          );
+        } catch {
+          // Local Studio may be disabled while the standard mockup remains usable.
+        }
+      }
+
+      if (!isCancelled) {
+        setAvailableTemplateOptions(nextTemplates);
+      }
+    }
+
+    void loadAvailableTemplates();
 
     return () => {
       isCancelled = true;
@@ -2709,14 +2782,9 @@ export default function MockupGenerator({
   }, [availableTemplates]);
 
   useEffect(() => {
-    if (initialTemplate) {
-      applyTemplateState(initialTemplate);
-      return;
-    }
-
     if (!productSlug) {
       setTemplate(null);
-      setTemplateError("Choose a product to open its live mockup page.");
+      setTemplateError("Choose a product to open its mockup page.");
       setIsTemplateLoading(false);
       setExpandedPartId(null);
       setFocusedPartId(null);
@@ -2724,73 +2792,78 @@ export default function MockupGenerator({
       return;
     }
 
-    if (!isLiveTemplateDatabaseConfigured()) {
+    if (initialTemplate) {
+      applyTemplateState(initialTemplate);
+    } else {
       setTemplate(null);
-      setTemplateError("This live product route needs Supabase to load published templates.");
-      setIsTemplateLoading(false);
+      setTemplateError(null);
+      setIsTemplateLoading(true);
       setExpandedPartId(null);
       setFocusedPartId(null);
       setPartFinishes({});
-      return;
     }
 
     let isCancelled = false;
 
-    setTemplate(null);
-    setTemplateError(null);
-    setIsTemplateLoading(true);
-    setExpandedPartId(null);
-    setFocusedPartId(null);
-    setPartFinishes({});
+    async function loadPublishedTemplate() {
+      if (isLocalStudioBrowser()) {
+        try {
+          const localTemplate = await getLocalLibraryTemplate(productSlug, localChannel);
+          if (isCancelled) return;
+          if (localTemplate) {
+            applyTemplateState(localTemplate.template);
+            return;
+          }
+        } catch (error) {
+          if (!initialTemplate && !isLiveTemplateDatabaseConfigured()) {
+            setTemplateError(
+              error instanceof Error ? error.message : "Failed to load the local product."
+            );
+          }
+        }
+      }
 
-    getPublishedLiveTemplate(productSlug)
-      .then((liveTemplate) => {
-        if (isCancelled) return;
-
-        if (!liveTemplate) {
-          setTemplate(null);
-          setTemplateError("This product has not been published yet.");
+      if (isLiveTemplateDatabaseConfigured()) {
+        try {
+          const liveTemplate = await getPublishedLiveTemplate(productSlug, initialTemplate);
+          if (isCancelled) return;
+          if (liveTemplate) {
+            applyTemplateState(liveTemplate);
+            return;
+          }
+        } catch (error) {
+          if (isCancelled) return;
+          if (initialTemplate) {
+            setSubmitError(
+              error instanceof Error ? error.message : "Failed to load the live template."
+            );
+            return;
+          }
+          setTemplateError(
+            error instanceof Error ? error.message : "Failed to load the live mockup template."
+          );
           setIsTemplateLoading(false);
           return;
         }
+      }
 
-        applyTemplateState(liveTemplate);
-      })
-      .catch((error) => {
-        if (isCancelled) return;
+      if (!initialTemplate && !isCancelled) {
         setTemplate(null);
         setTemplateError(
-          error instanceof Error ? error.message : "Failed to load the live mockup template."
+          isLocalStudioBrowser()
+            ? "This product has not been published in the Local Asset Library."
+            : "This product has not been published."
         );
         setIsTemplateLoading(false);
-      });
+      }
+    }
+
+    void loadPublishedTemplate();
 
     return () => {
       isCancelled = true;
     };
-  }, [productSlug, initialTemplate]);
-
-  useEffect(() => {
-    if (!initialTemplate || !isLiveTemplateDatabaseConfigured()) return;
-
-    let isCancelled = false;
-
-    getPublishedLiveTemplate(productSlug, initialTemplate)
-      .then((liveTemplate) => {
-        if (isCancelled || !liveTemplate) return;
-        applyTemplateState(liveTemplate);
-      })
-      .catch((error) => {
-        if (isCancelled) return;
-        setSubmitError(
-          error instanceof Error ? error.message : "Failed to load Supabase live template."
-        );
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [productSlug, initialTemplate]);
+  }, [productSlug, initialTemplate, localChannel]);
 
   useEffect(() => {
     if (!template) return;
@@ -2810,7 +2883,7 @@ export default function MockupGenerator({
       (availableTemplate) => normalizeProductCategory(availableTemplate.category) === category
     );
     if (nextTemplate && normalizeProductCategory(template?.category) !== category) {
-      router.push(`/mockup/${nextTemplate.slug}`);
+      router.push(`/mockup?slug=${encodeURIComponent(nextTemplate.slug)}`);
     }
   }
 
@@ -3455,7 +3528,9 @@ export default function MockupGenerator({
                   <select
                     className="product-switcher-select"
                     value={productSlug}
-                    onChange={(event) => router.push(`/mockup/${event.target.value}`)}
+                    onChange={(event) =>
+                      router.push(`/mockup?slug=${encodeURIComponent(event.target.value)}`)
+                    }
                   >
                     {filteredAvailableTemplates.map((availableTemplate) => (
                       <option key={availableTemplate.slug} value={availableTemplate.slug}>
@@ -3466,9 +3541,11 @@ export default function MockupGenerator({
                 </label>
               </div>
             ) : null}
-            <Link href="/setup" className="secondary-link-button">
-              Setup studio
-            </Link>
+            {showLocalStudioLink ? (
+              <Link href="/setup" className="secondary-link-button">
+                Local Studio
+              </Link>
+            ) : null}
             <span className="mode-pill">Local layered studio</span>
           </div>
         </div>
@@ -4143,9 +4220,11 @@ export default function MockupGenerator({
                       </div>
                     </div>
 
-                    <Link href="/setup" className="button-primary setup-required-link">
-                      Open setup studio
-                    </Link>
+                    {showLocalStudioLink ? (
+                      <Link href="/setup" className="button-primary setup-required-link">
+                        Open Local Studio
+                      </Link>
+                    ) : null}
                   </section>
                 ) : null}
 

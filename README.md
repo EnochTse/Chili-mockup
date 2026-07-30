@@ -1,6 +1,6 @@
 # Chili Product Mockup Generator
 
-Standalone Next.js app for creating Chili product mockup previews from checked-in product templates, Pantone selections, material finish bases, part reference masks, and an uploaded client logo.
+Standalone Next.js app for creating Chili product mockup previews from versioned product asset packs, Pantone selections, product-specific material references, part masks, and an uploaded client logo.
 
 Generated mockups are visual references only. Final artwork, Pantone accuracy, logo size, print method, and production details must be confirmed by the Chili design team.
 
@@ -25,20 +25,37 @@ npm run dev
 Open:
 
 ```text
-http://localhost:3000/
+http://127.0.0.1:3000/
+http://127.0.0.1:3000/setup
 ```
 
-## Product Setup
+No separate backend, database, Docker service, or Supabase configuration is required for Local Studio. The first local save creates `.chili-local-library/` automatically. Set `CHILI_LOCAL_LIBRARY_PATH` only when the library should live somewhere else.
 
-Use `/setup` locally to edit a product template. Setup Studio can upload:
+## Local Asset Library
+
+Use `/setup` on localhost to create and version product asset packs. Setup Studio accepts:
 
 - Base product and instruction images.
-- Material base images for each finish.
+- A product-specific reference image for each supported material finish.
 - Per-part reference or mask images.
-- Material finish order for each part.
+- Lossless printing-area masks.
+- Product-specific material response calibration.
+- Optional product-and-finish-specific shadow, highlight, texture, sheen, and edge-AO maps.
 - Indicator anchor positions for preview callouts.
 
-Setup Studio saves into `src/lib/templates/<productSlug>/template.json` and `public/mockup-templates/<productSlug>/`.
+Local Studio provides:
+
+- Immutable draft and published releases.
+- Content-addressed assets, so unchanged images are not duplicated between releases.
+- A lightweight catalog that loads only the selected full product, suitable for 300+ products.
+- Alignment, file-signature, size, and lossless-mask validation before save.
+- Published-version rollback without deleting release history.
+- Portable `.chili-product.zip` export and import.
+- Local draft preview at `/mockup?slug=<slug>&preview=latest`.
+
+Pantone colors remain runtime overlays. Do not create one image per Pantone color.
+
+See [Local Studio Asset Library](docs/local-studio-asset-library.md) for the required pictures, file rules, folder format, and future server migration.
 
 ## Netlify Deploys
 
@@ -50,7 +67,9 @@ Netlify deploys this project as a static export:
   publish = "out"
 ```
 
-The branch deploy reads checked-in templates and assets. Setup Studio saving is local-only, so commit template and asset changes before deploying.
+The branch deploy reads checked-in templates and Supabase-published assets. The Local Asset Library is intentionally excluded from Git and Netlify builds. Netlify exposes a locked Setup page and no admin write API.
+
+Code updates are deployed through a Git branch. Product releases remain in the Local Asset Library until a future authenticated cloud/server adapter synchronizes the same asset-pack format.
 
 ## Testing
 
@@ -63,6 +82,8 @@ npm run build
 ## Known Limitations
 
 - Pantone previews are screen approximations.
-- Products need material base images and part reference masks before local layered rendering can produce reliable color previews.
+- Every supported material needs a reference image made for that product and view.
+- Finish, part-mask, material-map, and print-area layers for one view must share an aspect ratio and camera alignment; differing resolutions are scaled with a quality note.
+- Local products are available on the current machine only until a cloud/server adapter is configured.
 - Generated images are visual references only.
 - Final artwork, logo scale, print process, and production files require design-team confirmation.

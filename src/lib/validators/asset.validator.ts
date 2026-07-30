@@ -2,7 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { AppError } from "@/lib/errors";
 
-type AssetKind = "base" | "instruction" | "part_mask";
+export type AssetKind = "base" | "instruction" | "part_mask";
+
+export type InspectedImage = {
+  mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/svg+xml";
+  width: number;
+  height: number;
+};
 
 const bannedAssetWords = [
   "starter",
@@ -44,7 +50,12 @@ function getPngDimensions(buffer: Buffer) {
     buffer[0] !== 0x89 ||
     buffer[1] !== 0x50 ||
     buffer[2] !== 0x4e ||
-    buffer[3] !== 0x47
+    buffer[3] !== 0x47 ||
+    buffer[4] !== 0x0d ||
+    buffer[5] !== 0x0a ||
+    buffer[6] !== 0x1a ||
+    buffer[7] !== 0x0a ||
+    buffer.toString("ascii", 12, 16) !== "IHDR"
   ) {
     return null;
   }
@@ -62,15 +73,20 @@ function getJpegDimensions(buffer: Buffer) {
   }
 
   let offset = 2;
-  while (offset < buffer.length) {
+  while (offset + 4 < buffer.length) {
     if (buffer[offset] !== 0xff) {
       offset += 1;
       continue;
     }
 
     const marker = buffer[offset + 1];
+    if (marker === 0xd8 || marker === 0xd9) {
+      offset += 2;
+      continue;
+    }
+
     const length = buffer.readUInt16BE(offset + 2);
-    if (length < 2) break;
+    if (length < 2 || offset + 2 + length > buffer.length) break;
 
     const isStartOfFrame =
       (marker >= 0xc0 && marker <= 0xc3) ||
@@ -118,6 +134,15 @@ function getWebpDimensions(buffer: Buffer) {
     };
   }
 
+  if (chunk === "VP8L" && buffer.length >= 25 && buffer[20] === 0x2f) {
+    const bits = buffer.readUInt32LE(21);
+    return {
+      mimeType: "image/webp",
+      width: 1 + (bits & 0x3fff),
+      height: 1 + ((bits >> 14) & 0x3fff)
+    };
+  }
+
   return null;
 }
 
@@ -135,7 +160,7 @@ function readSvgDimensions(text: string) {
   };
 }
 
-function inspectImage(buffer: Buffer, assetPath: string) {
+export function inspectImageBuffer(buffer: Buffer, assetPath: string): InspectedImage {
   const extension = path.extname(assetPath).toLowerCase();
   const svg = extension === ".svg" ? readSvgDimensions(buffer.toString("utf8")) : null;
   const info =
@@ -179,7 +204,7 @@ function inspectImage(buffer: Buffer, assetPath: string) {
     );
   }
 
-  return info;
+  return info as InspectedImage;
 }
 
 export async function validateTemplateAsset(assetPath: string, kind: AssetKind) {
@@ -209,5 +234,5 @@ export async function validateTemplateAsset(assetPath: string, kind: AssetKind) 
 
   assertNoPlaceholderAsset(assetPath, buffer);
 
-  return inspectImage(buffer, assetPath);
+  return inspectImageBuffer(buffer, assetPath);
 }

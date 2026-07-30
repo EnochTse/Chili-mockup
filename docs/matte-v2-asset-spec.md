@@ -40,7 +40,7 @@ Matte V2 treats matte as a separate material model, not as a weakened glossy ren
 
 ## Renderer Calibration
 
-The renderer keeps one shared matte finish rule across products. Product-specific matte fixes should not be made by changing individual `finishRules` unless there is a deliberate exception.
+The matte calculation method is shared and versioned in code, but every product release stores its own bounded `finishRules`. Start with the shared matte defaults, then calibrate Pantone coverage, highlight protection, surface detail, and saturation against that product's real reference. Do not copy another product's final values without checking black, white, neutral gray, red, yellow, and dark blue.
 
 When a product provides manual matte maps and part masks, the renderer builds a product-area mask from the part masks and calibrates the manual map brightness before material composition:
 

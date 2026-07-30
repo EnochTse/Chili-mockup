@@ -1,4 +1,7 @@
-import type { ProductFinishOption } from "@/lib/types";
+import type {
+  LayeredRenderFinishRule,
+  ProductFinishOption
+} from "@/lib/types";
 
 export const productFinishOptions = [
   "matte",
@@ -14,6 +17,47 @@ export const productFinishLabels: Record<ProductFinishOption, string> = {
   rubber: "Rubber",
   metallic: "Metallic",
   chrome: "Chrome"
+};
+
+export const defaultLayeredFinishRules: Record<
+  ProductFinishOption,
+  LayeredRenderFinishRule
+> = {
+  matte: {
+    colorOpacity: 0.98,
+    blendMode: "source-over",
+    highlightProtection: 0.14,
+    textureStrength: 0.18,
+    saturationBoost: 0.05
+  },
+  glossy: {
+    colorOpacity: 0.97,
+    blendMode: "source-over",
+    highlightProtection: 0.28,
+    textureStrength: 0.18,
+    saturationBoost: 0.08
+  },
+  rubber: {
+    colorOpacity: 0.98,
+    blendMode: "source-over",
+    highlightProtection: 0.2,
+    textureStrength: 0.18,
+    saturationBoost: 0.06
+  },
+  metallic: {
+    colorOpacity: 0.96,
+    blendMode: "source-over",
+    highlightProtection: 0.34,
+    textureStrength: 0.2,
+    saturationBoost: 0.04
+  },
+  chrome: {
+    colorOpacity: 0.16,
+    blendMode: "source-over",
+    highlightProtection: 0.72,
+    textureStrength: 0.34,
+    saturationBoost: 0
+  }
 };
 
 export const colorLockedFinishOptions = ["chrome"] as const satisfies readonly ProductFinishOption[];

@@ -1,39 +1,62 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ChiliLogo from "@/components/chili-logo";
 import {
+  createLocalUploadReference,
+  getLocalUploadFormField
+} from "@/lib/local-library/asset-reference";
+import type {
+  LocalLibrarySnapshot,
+  LocalProductCatalogView,
+  LocalReleaseStatus
+} from "@/lib/local-library/types";
+import {
+  defaultLayeredFinishRules,
   productFinishLabels,
   productFinishOptions,
   resolvePartDefaultFinish
 } from "@/lib/services/finish-option.service";
 import {
+  getLocalLibraryClientSnapshot,
+  getLocalLibraryTemplate,
+  getLocalProductExportUrl,
+  importLocalLibraryProduct,
+  isLocalStudioBrowser,
+  rollbackLocalLibraryProduct,
+  saveLocalLibraryRelease
+} from "@/lib/services/local-library.client";
+import {
   normalizeProductCategory,
   productCategoryOptions
 } from "@/lib/services/product-category.service";
 import { getPrintingMethodPrompt } from "@/lib/services/prompt.service";
-import {
-  getNextLiveTemplateVersion,
-  isLiveTemplateDatabaseConfigured,
-  listLatestLiveTemplates,
-  saveLiveTemplateVersion
-} from "@/lib/services/live-template-database.service";
-import {
-  uploadLiveTemplateAssets,
-  type LiveTemplateUploadedAssets
-} from "@/lib/services/live-template-storage.service";
 import type {
   LayeredRenderConfig,
   LayeredRenderFinishRule,
+  LayeredMaterialMapKey,
   LogoOrientationPreset,
   PartIndicatorAnchor,
   ProductColorPart,
   ProductFinishOption,
   ProductSpecification,
-  TemplatePublicDto
+  TemplatePublicDto,
+  TemplateSummaryDto
 } from "@/lib/types";
+
+type TemplateUploadedAssets = {
+  baseImageUrl?: string;
+  instructionImageUrl?: string;
+  partMaskImageUrls: Record<string, string>;
+  finishBaseImageUrls: Partial<Record<ProductFinishOption, string>>;
+  materialMapImageUrls: Partial<
+    Record<ProductFinishOption, Partial<Record<LayeredMaterialMapKey, string>>>
+  >;
+  printingAreaImageUrls: Record<string, string>;
+};
+
+type MaterialMapFileSet = Partial<Record<LayeredMaterialMapKey, File | null>>;
 
 type EditorFormState = {
   originalSlug: string;
@@ -53,6 +76,7 @@ type EditorFormState = {
   layeredOutputWidth: string;
   layeredOutputHeight: string;
   layeredFinishBaseImages: Partial<Record<ProductFinishOption, string>>;
+  layeredMaterialMaps: NonNullable<LayeredRenderConfig["materialMaps"]>;
   layeredFinishRules: Partial<Record<ProductFinishOption, LayeredRenderFinishRule>>;
   logoOrientationPreset: LogoOrientationPreset;
   logoPrintingAreaImages: Record<string, string>;
@@ -80,6 +104,37 @@ const defaultTemplateConstraints = {
   noExtraBranding: true,
   noExtraTextExceptLogo: true
 };
+const advancedMaterialMapDefinitions: Array<{
+  key: Exclude<LayeredMaterialMapKey, "base">;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: "shadow",
+    label: "Form shadow",
+    description: "Broad product form and curvature. Use grayscale PNG or WebP."
+  },
+  {
+    key: "highlight",
+    label: "Soft highlight",
+    description: "Broad light response without baked product color."
+  },
+  {
+    key: "texture",
+    label: "Surface texture",
+    description: "Fine, low-contrast grain or material detail."
+  },
+  {
+    key: "specular",
+    label: "Specular / sheen",
+    description: "Controlled reflective response for this finish."
+  },
+  {
+    key: "edgeAo",
+    label: "Edge AO",
+    description: "Tight seam and contact darkening only."
+  }
+];
 
 function createDraftPart(index: number): ProductColorPart {
   return {
@@ -128,7 +183,13 @@ function makeBlankFormState(): EditorFormState {
     layeredOutputWidth: "",
     layeredOutputHeight: "",
     layeredFinishBaseImages: {},
-    layeredFinishRules: {},
+    layeredMaterialMaps: {},
+    layeredFinishRules: Object.fromEntries(
+      productFinishOptions.map((finish) => [
+        finish,
+        { ...defaultLayeredFinishRules[finish] }
+      ])
+    ),
     logoOrientationPreset: "horizontal",
     logoPrintingAreaImages: {}
   };
@@ -176,7 +237,16 @@ function buildFormStateFromTemplate(template: TemplatePublicDto): EditorFormStat
       ? String(template.layeredRender.outputSize.height)
       : "",
     layeredFinishBaseImages: template.layeredRender?.finishBaseImages || {},
-    layeredFinishRules: template.layeredRender?.finishRules || {},
+    layeredMaterialMaps: template.layeredRender?.materialMaps || {},
+    layeredFinishRules: Object.fromEntries(
+      productFinishOptions.map((finish) => [
+        finish,
+        {
+          ...defaultLayeredFinishRules[finish],
+          ...(template.layeredRender?.finishRules?.[finish] || {})
+        }
+      ])
+    ),
     logoOrientationPreset: template.logoPlacement.orientationPreset || "horizontal",
     logoPrintingAreaImages: template.logoPlacement.printingAreaImages || {}
   };
@@ -242,21 +312,14 @@ function roundToSingleDecimal(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-function canSaveTemplateInCurrentEnvironment() {
-  if (typeof window === "undefined") return true;
-
-  const hostname = window.location.hostname.toLowerCase();
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-}
-
 function mergeTemplates(
   baseTemplates: TemplatePublicDto[],
-  liveTemplates: TemplatePublicDto[]
+  overridingTemplates: TemplatePublicDto[]
 ) {
   const mergedTemplates = new Map(baseTemplates.map((template) => [template.slug, template]));
 
-  for (const liveTemplate of liveTemplates) {
-    mergedTemplates.set(liveTemplate.slug, liveTemplate);
+  for (const template of overridingTemplates) {
+    mergedTemplates.set(template.slug, template);
   }
 
   return Array.from(mergedTemplates.values()).sort((left, right) =>
@@ -264,10 +327,38 @@ function mergeTemplates(
   );
 }
 
-function buildLiveLayeredRender(
+function mergeExpandedLocalProduct(
+  snapshot: LocalLibrarySnapshot,
+  product: LocalProductCatalogView
+) {
+  const products = snapshot.catalog.products.some(
+    (candidate) => candidate.slug === product.slug
+  )
+    ? snapshot.catalog.products.map((candidate) =>
+        candidate.slug === product.slug
+          ? product
+          : {
+              ...candidate,
+              releases: candidate.releases.slice(0, 1)
+            }
+      )
+    : [...snapshot.catalog.products, product].sort((left, right) =>
+        left.name.localeCompare(right.name)
+      );
+
+  return {
+    ...snapshot,
+    catalog: {
+      ...snapshot.catalog,
+      products
+    }
+  };
+}
+
+function buildLayeredRender(
   formState: EditorFormState,
   sourceTemplate: TemplatePublicDto | null,
-  uploadedAssets: LiveTemplateUploadedAssets
+  uploadedAssets: TemplateUploadedAssets
 ): LayeredRenderConfig | undefined {
   if (!formState.layeredRenderEnabled) return undefined;
 
@@ -284,7 +375,12 @@ function buildLiveLayeredRender(
     formState.colorParts
       .map((part) => [
         part.id,
-        uploadedAssets.partMaskImageUrls[part.id] || part.partMaskImageFileName || ""
+        uploadedAssets.partMaskImageUrls[part.id] ||
+          sourceTemplate?.layeredRender?.partMasks[part.id] ||
+          sourceTemplate?.colorParts.find((sourcePart) => sourcePart.id === part.id)
+            ?.partMaskImageUrl ||
+          part.partMaskImageFileName ||
+          ""
       ])
       .filter(([, assetUrl]) => Boolean(assetUrl))
   );
@@ -292,6 +388,28 @@ function buildLiveLayeredRender(
     ...formState.layeredFinishBaseImages,
     ...uploadedAssets.finishBaseImageUrls
   };
+  const finishRules = Object.fromEntries(
+    (Object.keys(finishBaseImages) as ProductFinishOption[]).map((finish) => [
+      finish,
+      {
+        ...defaultLayeredFinishRules[finish],
+        ...(formState.layeredFinishRules[finish] || {})
+      }
+    ])
+  );
+  const materialMaps: NonNullable<LayeredRenderConfig["materialMaps"]> = {};
+  for (const finish of productFinishOptions) {
+    const mapSet = {
+      ...(formState.layeredMaterialMaps[finish] || {}),
+      ...(uploadedAssets.materialMapImageUrls[finish] || {})
+    };
+    const hasCalibratedMap = advancedMaterialMapDefinitions.some(
+      ({ key }) => Boolean(mapSet[key])
+    );
+    if (hasCalibratedMap) {
+      materialMaps[finish] = mapSet;
+    }
+  }
 
   return {
     enabled: true,
@@ -299,19 +417,17 @@ function buildLiveLayeredRender(
     ...(outputSize ? { outputSize } : {}),
     fallbackFinish: formState.layeredFallbackFinish,
     finishBaseImages,
-    ...(sourceTemplate?.layeredRender?.materialMaps
-      ? { materialMaps: sourceTemplate.layeredRender.materialMaps }
-      : {}),
+    ...(Object.keys(materialMaps).length ? { materialMaps } : {}),
     partMasks,
-    finishRules: formState.layeredFinishRules
+    finishRules
   };
 }
 
-function buildLiveTemplateFromFormState(
+function buildTemplateFromFormState(
   formState: EditorFormState,
   sourceTemplate: TemplatePublicDto | null,
   fallbackPantoneOptions: TemplatePublicDto["pantoneOptions"],
-  uploadedAssets: LiveTemplateUploadedAssets
+  uploadedAssets: TemplateUploadedAssets
 ): TemplatePublicDto {
   const sourcePartsById = new Map((sourceTemplate?.colorParts || []).map((part) => [part.id, part]));
   const printingAreaImages = {
@@ -343,10 +459,10 @@ function buildLiveTemplateFromFormState(
       ...part,
       partMaskImageUrl:
         uploadedAssets.partMaskImageUrls[part.id] ||
-        part.partMaskImageFileName ||
-        sourcePartsById.get(part.id)?.partMaskImageUrl
+        sourcePartsById.get(part.id)?.partMaskImageUrl ||
+        part.partMaskImageFileName
     })),
-    layeredRender: buildLiveLayeredRender(formState, sourceTemplate, uploadedAssets),
+    layeredRender: buildLayeredRender(formState, sourceTemplate, uploadedAssets),
     logoPlacement: {
       ...(sourceTemplate?.logoPlacement || {
         description: "Keep logo inside the highlighted print area.",
@@ -361,6 +477,77 @@ function buildLiveTemplateFromFormState(
     },
     constraints: sourceTemplate?.constraints || defaultTemplateConstraints
   };
+}
+
+function buildLocalUploadAssets(params: {
+  formState: EditorFormState;
+  partMaskFiles: Record<string, File | null>;
+  finishBaseFiles: Partial<Record<ProductFinishOption, File | null>>;
+  materialMapFiles: Partial<Record<ProductFinishOption, MaterialMapFileSet>>;
+  printingAreaFiles: Record<string, File | null>;
+}): TemplateUploadedAssets {
+  const {
+    formState,
+    partMaskFiles,
+    finishBaseFiles,
+    materialMapFiles,
+    printingAreaFiles
+  } = params;
+
+  return {
+    ...(formState.baseImageFile
+      ? { baseImageUrl: createLocalUploadReference("base", "product-base") }
+      : {}),
+    ...(formState.instructionImageFile
+      ? { instructionImageUrl: createLocalUploadReference("instruction", "instruction") }
+      : {}),
+    partMaskImageUrls: Object.fromEntries(
+      formState.colorParts.flatMap((part) =>
+        partMaskFiles[part.id]
+          ? [[part.id, createLocalUploadReference("part-mask", part.id)]]
+          : []
+      )
+    ),
+    finishBaseImageUrls: Object.fromEntries(
+      productFinishOptions.flatMap((finish) =>
+        finishBaseFiles[finish]
+          ? [[finish, createLocalUploadReference("finish-base", finish)]]
+          : []
+      )
+    ),
+    materialMapImageUrls: Object.fromEntries(
+      productFinishOptions.flatMap((finish) => {
+        const mapUrls = Object.fromEntries(
+          advancedMaterialMapDefinitions.flatMap(({ key }) =>
+            materialMapFiles[finish]?.[key]
+              ? [
+                  [
+                    key,
+                    createLocalUploadReference(
+                      "material-map",
+                      `${finish}:${key}`
+                    )
+                  ]
+                ]
+              : []
+          )
+        );
+        return Object.keys(mapUrls).length ? [[finish, mapUrls]] : [];
+      })
+    ),
+    printingAreaImageUrls: Object.fromEntries(
+      Object.entries(printingAreaFiles).flatMap(([method, file]) =>
+        file
+          ? [[method, createLocalUploadReference("printing-area", method)]]
+          : []
+      )
+    )
+  };
+}
+
+function appendLocalUpload(formData: FormData, reference: string | undefined, file: File | null) {
+  if (!reference || !file) return;
+  formData.append(getLocalUploadFormField(reference), file);
 }
 
 function buildIndicatorExportPayload(formState: EditorFormState) {
@@ -445,6 +632,148 @@ function FinishBaseAssetField({
       {pendingFile ? <p className="fine-print">Pending file: {pendingFile.name}</p> : null}
       {currentUrl && !pendingFile ? <p className="fine-print">Current asset: {currentUrl}</p> : null}
     </label>
+  );
+}
+
+type EditableFinishRuleKey =
+  | "colorOpacity"
+  | "highlightProtection"
+  | "textureStrength"
+  | "saturationBoost";
+
+const finishCalibrationFields: Array<{
+  key: EditableFinishRuleKey;
+  label: string;
+  max: number;
+}> = [
+  { key: "colorOpacity", label: "Pantone coverage", max: 1 },
+  { key: "highlightProtection", label: "Highlight", max: 1 },
+  { key: "textureStrength", label: "Surface detail", max: 1 },
+  { key: "saturationBoost", label: "Saturation", max: 0.5 }
+];
+
+function MaterialCalibrationFields({
+  finish,
+  rule,
+  onChange
+}: {
+  finish: ProductFinishOption;
+  rule: LayeredRenderFinishRule;
+  onChange: (key: EditableFinishRuleKey, value: number) => void;
+}) {
+  return (
+    <div className="material-calibration-panel">
+      <div className="material-calibration-head">
+        <strong>{productFinishLabels[finish]} response</strong>
+        <span>Product-specific calculation</span>
+      </div>
+      <div className="material-calibration-grid">
+        {finishCalibrationFields.map((field) => {
+          const fallbackValue = defaultLayeredFinishRules[finish][field.key] ?? 0;
+          const value = rule[field.key] ?? fallbackValue;
+
+          return (
+            <label className="material-calibration-field" key={`${finish}-${field.key}`}>
+              <span>{field.label}</span>
+              <input
+                className="input-shell"
+                type="number"
+                min="0"
+                max={field.max}
+                step="0.01"
+                value={value}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  if (Number.isFinite(nextValue)) {
+                    onChange(field.key, Math.min(field.max, Math.max(0, nextValue)));
+                  }
+                }}
+              />
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MaterialMapAssetFields({
+  finish,
+  currentMaps,
+  pendingFiles,
+  onFileChange,
+  onRemove
+}: {
+  finish: ProductFinishOption;
+  currentMaps: Partial<Record<LayeredMaterialMapKey, string>>;
+  pendingFiles: MaterialMapFileSet;
+  onFileChange: (
+    key: Exclude<LayeredMaterialMapKey, "base">,
+    file: File | null
+  ) => void;
+  onRemove: (key: Exclude<LayeredMaterialMapKey, "base">) => void;
+}) {
+  const configuredCount = advancedMaterialMapDefinitions.filter(
+    ({ key }) => currentMaps[key] || pendingFiles[key]
+  ).length;
+
+  return (
+    <details className="material-map-details">
+      <summary>
+        <span>Advanced calibrated maps</span>
+        <small>
+          {configuredCount
+            ? `${configuredCount} of ${advancedMaterialMapDefinitions.length} configured`
+            : "Optional"}
+        </small>
+      </summary>
+      <div className="material-map-content">
+        <p className="fine-print">
+          Leave these empty to derive the material response from this product&apos;s{" "}
+          {productFinishLabels[finish]} reference. Add a map only when that automatic
+          result needs correction.
+        </p>
+        <div className="material-map-grid">
+          {advancedMaterialMapDefinitions.map(({ key, label, description }) => {
+            const currentUrl = currentMaps[key];
+            const pendingFile = pendingFiles[key];
+
+            return (
+              <div className="material-map-field" key={`${finish}-${key}`}>
+                <label>
+                  <span className="control-label">{label}</span>
+                  <span className="fine-print">{description}</span>
+                  <input
+                    className="input-shell"
+                    type="file"
+                    accept="image/png,image/webp"
+                    onChange={(event) =>
+                      onFileChange(key, event.target.files?.[0] || null)
+                    }
+                  />
+                </label>
+                {pendingFile ? (
+                  <p className="fine-print">Pending replacement: {pendingFile.name}</p>
+                ) : currentUrl ? (
+                  <div className="material-map-current">
+                    <p className="fine-print" title={currentUrl}>
+                      Calibrated map saved
+                    </p>
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => onRemove(key)}
+                    >
+                      Use automatic map
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -675,21 +1004,25 @@ function PartIndicatorVisualEditor({
 }
 
 export default function TemplateSetupStudio({
-  initialTemplates
+  initialTemplates,
+  pantoneOptions
 }: {
-  initialTemplates: TemplatePublicDto[];
+  initialTemplates: TemplateSummaryDto[];
+  pantoneOptions: TemplatePublicDto["pantoneOptions"];
 }) {
-  const router = useRouter();
-  const [templates, setTemplates] = useState(initialTemplates);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const selectionRequestRef = useRef(0);
+  const [templates, setTemplates] = useState<TemplatePublicDto[]>([]);
   const [selectedSlug, setSelectedSlug] = useState(
     initialTemplates[0]?.slug || newTemplateKey
   );
-  const [formState, setFormState] = useState<EditorFormState>(
-    initialTemplates[0] ? buildFormStateFromTemplate(initialTemplates[0]) : makeBlankFormState()
-  );
+  const [formState, setFormState] = useState<EditorFormState>(makeBlankFormState);
   const [partMaskFiles, setPartMaskFiles] = useState<Record<string, File | null>>({});
   const [finishBaseFiles, setFinishBaseFiles] = useState<
     Partial<Record<ProductFinishOption, File | null>>
+  >({});
+  const [materialMapFiles, setMaterialMapFiles] = useState<
+    Partial<Record<ProductFinishOption, MaterialMapFileSet>>
   >({});
   const [printingAreaFiles, setPrintingAreaFiles] = useState<Record<string, File | null>>({});
   const [draggedFinishOrder, setDraggedFinishOrder] = useState<{
@@ -697,7 +1030,12 @@ export default function TemplateSetupStudio({
     finish: ProductFinishOption;
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isLiveTemplateLoading, setIsLiveTemplateLoading] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+  const [libraryAccess, setLibraryAccess] = useState<
+    "checking" | "available" | "remote" | "unavailable"
+  >("checking");
+  const [localSnapshot, setLocalSnapshot] = useState<LocalLibrarySnapshot | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const baseImagePreviewUrl = useResolvedAssetPreview(
@@ -713,47 +1051,125 @@ export default function TemplateSetupStudio({
     () => templates.find((template) => template.slug === selectedSlug) || null,
     [selectedSlug, templates]
   );
+  const availableProducts = useMemo(() => {
+    const productsBySlug = new Map(
+      initialTemplates.map((template) => [
+        template.slug,
+        {
+          slug: template.slug,
+          name: template.name,
+          category: template.category
+        }
+      ])
+    );
+
+    for (const template of templates) {
+      productsBySlug.set(template.slug, {
+        slug: template.slug,
+        name: template.name,
+        category: template.category
+      });
+    }
+
+    for (const product of localSnapshot?.catalog.products || []) {
+      productsBySlug.set(product.slug, {
+        slug: product.slug,
+        name: product.name,
+        category: product.category
+      });
+    }
+
+    return Array.from(productsBySlug.values()).sort((left, right) =>
+      left.name.localeCompare(right.name)
+    );
+  }, [initialTemplates, localSnapshot, templates]);
   const isNewTemplate = selectedSlug === newTemplateKey || !selectedTemplate;
-  const liveDatabaseEnabled = isLiveTemplateDatabaseConfigured();
-  const canSaveLocally = canSaveTemplateInCurrentEnvironment();
-  const canSaveTemplate = liveDatabaseEnabled || canSaveLocally;
-  const saveModeLabel = liveDatabaseEnabled
-    ? "Supabase live database"
-    : canSaveLocally
-      ? "Local save enabled"
-      : "Preview only";
+  const canSaveTemplate = libraryAccess === "available" && !isLoadingTemplate;
+  const saveModeLabel =
+    libraryAccess === "checking"
+      ? "Checking localhost"
+      : libraryAccess === "available"
+        ? "Local Asset Library"
+        : libraryAccess === "remote"
+          ? "Remote setup locked"
+          : "Local API unavailable";
+  const selectedLocalProduct = useMemo(
+    () =>
+      localSnapshot?.catalog.products.find((product) => product.slug === formState.slug) || null,
+    [formState.slug, localSnapshot]
+  );
   const logoPrintingMethods =
     selectedTemplate?.allowedPrintingMethods?.length
       ? selectedTemplate.allowedPrintingMethods
       : defaultPrintingMethods;
+  const activeMaterialFinishes = useMemo(() => {
+    const finishes = new Set<ProductFinishOption>([formState.layeredFallbackFinish]);
+    for (const part of formState.colorParts) {
+      for (const finish of part.allowedFinishes || []) {
+        finishes.add(finish);
+      }
+    }
+    return productFinishOptions.filter((finish) => finishes.has(finish));
+  }, [formState.colorParts, formState.layeredFallbackFinish]);
 
   useEffect(() => {
-    if (!liveDatabaseEnabled) return;
+    if (!isLocalStudioBrowser()) {
+      setLibraryAccess("remote");
+      return;
+    }
 
     let isCancelled = false;
 
-    setIsLiveTemplateLoading(true);
-    listLatestLiveTemplates(initialTemplates)
-      .then((liveTemplates) => {
-        if (isCancelled || !liveTemplates.length) return;
+    getLocalLibraryClientSnapshot()
+      .then(async (snapshot) => {
+        if (isCancelled) return;
+        setLocalSnapshot(snapshot);
+        setLibraryAccess("available");
 
-        const nextTemplates = mergeTemplates(initialTemplates, liveTemplates);
-        const selectedTemplateFromLive =
-          nextTemplates.find((template) => template.slug === selectedSlug) || nextTemplates[0];
-
-        setTemplates(nextTemplates);
-        if (selectedTemplateFromLive && selectedSlug !== newTemplateKey) {
-          setSelectedSlug(selectedTemplateFromLive.slug);
-          setFormState(buildFormStateFromTemplate(selectedTemplateFromLive));
+        const preferredSlug =
+          selectedSlug !== newTemplateKey
+            ? selectedSlug
+            : initialTemplates[0]?.slug || snapshot.catalog.products[0]?.slug;
+        let preferredTemplate: TemplatePublicDto | undefined;
+        if (preferredSlug) {
+          const localTemplate = await getLocalLibraryTemplate(
+            preferredSlug,
+            "latest",
+            true
+          );
+          if (isCancelled) return;
+          const expandedProduct = localTemplate?.product;
+          if (expandedProduct) {
+            setLocalSnapshot((current) =>
+              current
+                ? mergeExpandedLocalProduct(current, expandedProduct)
+                : current
+            );
+          }
+          preferredTemplate = localTemplate?.template;
         }
-        setSaveMessage("Loaded live template data from Supabase.");
+
+        if (preferredTemplate) {
+          setTemplates((current) => mergeTemplates(current, [preferredTemplate]));
+          setSelectedSlug(preferredTemplate.slug);
+          setFormState(buildFormStateFromTemplate(preferredTemplate));
+        }
+        setSaveMessage(
+          snapshot.catalog.products.length
+            ? `Local Asset Library ready with ${snapshot.catalog.products.length} product${
+                snapshot.catalog.products.length === 1 ? "" : "s"
+              }.`
+            : "Local Asset Library ready. Save the first product as a draft when its assets are ready."
+        );
       })
       .catch((error) => {
         if (isCancelled) return;
-        setSaveError(error instanceof Error ? error.message : "Failed to load live templates.");
-      })
-      .finally(() => {
-        if (!isCancelled) setIsLiveTemplateLoading(false);
+        setLibraryAccess("unavailable");
+        setSaveError(
+          error instanceof Error
+            ? error.message
+            : "Failed to open the Local Asset Library."
+        );
       });
 
     return () => {
@@ -777,12 +1193,17 @@ export default function TemplateSetupStudio({
     }));
   }
 
-  function selectTemplate(slug: string) {
+  async function selectTemplate(slug: string) {
+    const requestId = selectionRequestRef.current + 1;
+    selectionRequestRef.current = requestId;
+
     if (slug === newTemplateKey) {
+      setIsLoadingTemplate(false);
       setSelectedSlug(newTemplateKey);
       setFormState(makeBlankFormState());
       setPartMaskFiles({});
       setFinishBaseFiles({});
+      setMaterialMapFiles({});
       setPrintingAreaFiles({});
       setDraggedFinishOrder(null);
       setSaveError(null);
@@ -790,13 +1211,59 @@ export default function TemplateSetupStudio({
       return;
     }
 
-    const template = templates.find((candidate) => candidate.slug === slug);
-    if (!template) return;
+    let template = templates.find((candidate) => candidate.slug === slug);
+    const localProduct = localSnapshot?.catalog.products.find(
+      (product) => product.slug === slug
+    );
+    const repositoryProduct = initialTemplates.find(
+      (product) => product.slug === slug
+    );
+    if (libraryAccess === "available" && (localProduct || !template)) {
+      setIsLoadingTemplate(true);
+      setSaveError(null);
+      setSaveMessage(
+        `Loading ${localProduct?.name || repositoryProduct?.name || slug}...`
+      );
+      try {
+        const localTemplate = await getLocalLibraryTemplate(
+          slug,
+          "latest",
+          true
+        );
+        if (selectionRequestRef.current !== requestId) return;
+        if (!localTemplate) {
+          throw new Error("The selected product template could not be loaded.");
+        }
+        const expandedProduct = localTemplate.product;
+        if (expandedProduct) {
+          setLocalSnapshot((current) =>
+            current
+              ? mergeExpandedLocalProduct(current, expandedProduct)
+              : current
+          );
+        }
+        template = localTemplate?.template || template;
+      } catch (error) {
+        if (selectionRequestRef.current !== requestId) return;
+        setSaveError(
+          error instanceof Error ? error.message : "Failed to load the local product."
+        );
+        setSaveMessage(null);
+        return;
+      } finally {
+        if (selectionRequestRef.current === requestId) {
+          setIsLoadingTemplate(false);
+        }
+      }
+    }
+    if (!template || selectionRequestRef.current !== requestId) return;
 
+    setTemplates((current) => mergeTemplates(current, [template]));
     setSelectedSlug(slug);
     setFormState(buildFormStateFromTemplate(template));
     setPartMaskFiles({});
     setFinishBaseFiles({});
+    setMaterialMapFiles({});
     setPrintingAreaFiles({});
     setDraggedFinishOrder(null);
     setSaveError(null);
@@ -814,6 +1281,66 @@ export default function TemplateSetupStudio({
     setFinishBaseFiles((current) => ({
       ...current,
       [finish]: file
+    }));
+  }
+
+  function handleMaterialMapFileChange(
+    finish: ProductFinishOption,
+    key: Exclude<LayeredMaterialMapKey, "base">,
+    file: File | null
+  ) {
+    setMaterialMapFiles((current) => ({
+      ...current,
+      [finish]: {
+        ...(current[finish] || {}),
+        [key]: file
+      }
+    }));
+  }
+
+  function handleMaterialMapRemove(
+    finish: ProductFinishOption,
+    key: Exclude<LayeredMaterialMapKey, "base">
+  ) {
+    setMaterialMapFiles((current) => ({
+      ...current,
+      [finish]: {
+        ...(current[finish] || {}),
+        [key]: null
+      }
+    }));
+    setFormState((current) => {
+      const mapSet = { ...(current.layeredMaterialMaps[finish] || {}) };
+      delete mapSet[key];
+      const nextMaterialMaps = { ...current.layeredMaterialMaps };
+      if (Object.keys(mapSet).length) {
+        nextMaterialMaps[finish] = mapSet;
+      } else {
+        delete nextMaterialMaps[finish];
+      }
+
+      return {
+        ...current,
+        layeredMaterialMaps: nextMaterialMaps
+      };
+    });
+  }
+
+  function handleFinishRuleChange(
+    finish: ProductFinishOption,
+    key: EditableFinishRuleKey,
+    value: number
+  ) {
+    setFormState((current) => ({
+      ...current,
+      layeredFinishRules: {
+        ...current.layeredFinishRules,
+        [finish]: {
+          ...defaultLayeredFinishRules[finish],
+          ...(current.layeredFinishRules[finish] || {}),
+          [key]: value
+        }
+      }
     }));
   }
 
@@ -879,17 +1406,28 @@ export default function TemplateSetupStudio({
     }
   }
 
-  async function handleLiveTemplateSave(status: "draft" | "published") {
-    if (isNewTemplate && !selectedTemplate) {
-      setSaveError(
-        "Live image upload is ready for existing products. Brand-new live-only products need the next routing upgrade before they can open on the public mockup site."
-      );
-      setSaveMessage(null);
-      return;
-    }
+  function applyLocalSnapshot(snapshot: LocalLibrarySnapshot, selectedTemplate?: TemplatePublicDto) {
+    setLocalSnapshot(snapshot);
 
-    if (formState.originalSlug && formState.slug !== formState.originalSlug) {
-      setSaveError("Changing the product slug is not supported in live database mode yet.");
+    if (selectedTemplate) {
+      setTemplates((current) => mergeTemplates(current, [selectedTemplate]));
+      setSelectedSlug(selectedTemplate.slug);
+      setFormState(buildFormStateFromTemplate(selectedTemplate));
+    }
+  }
+
+  function clearPendingAssetFiles() {
+    setPartMaskFiles({});
+    setFinishBaseFiles({});
+    setMaterialMapFiles({});
+    setPrintingAreaFiles({});
+  }
+
+  async function handleLocalTemplateSave(status: LocalReleaseStatus) {
+    if (!canSaveTemplate) {
+      setSaveError(
+        "Local Studio can only save while this project is running on localhost with npm run dev."
+      );
       setSaveMessage(null);
       return;
     }
@@ -899,41 +1437,124 @@ export default function TemplateSetupStudio({
     setSaveMessage(null);
 
     try {
-      const nextVersion = await getNextLiveTemplateVersion(formState.slug);
-      const uploadedAssets = await uploadLiveTemplateAssets({
-        productSlug: formState.slug,
-        version: nextVersion,
-        baseImageFile: formState.baseImageFile,
-        instructionImageFile: formState.instructionImageFile,
+      const uploadedAssets = buildLocalUploadAssets({
+        formState,
         partMaskFiles,
         finishBaseFiles,
+        materialMapFiles,
         printingAreaFiles
       });
-      const liveTemplate = buildLiveTemplateFromFormState(
+      const template = buildTemplateFromFormState(
         formState,
         selectedTemplate,
-        initialTemplates[0]?.pantoneOptions || [],
+        pantoneOptions,
         uploadedAssets
       );
-      const savedVersion = await saveLiveTemplateVersion(liveTemplate, status, {
-        version: nextVersion
-      });
-      const nextTemplates = mergeTemplates(templates, [savedVersion.template]);
+      const formData = new FormData();
+      formData.append("status", status);
+      formData.append("template", JSON.stringify(template));
+      appendLocalUpload(
+        formData,
+        uploadedAssets.baseImageUrl,
+        formState.baseImageFile
+      );
+      appendLocalUpload(
+        formData,
+        uploadedAssets.instructionImageUrl,
+        formState.instructionImageFile
+      );
 
-      setTemplates(nextTemplates);
-      setSelectedSlug(savedVersion.template.slug);
-      setFormState(buildFormStateFromTemplate(savedVersion.template));
-      setPartMaskFiles({});
-      setFinishBaseFiles({});
-      setPrintingAreaFiles({});
+      formState.colorParts.forEach((part) => {
+        appendLocalUpload(
+          formData,
+          uploadedAssets.partMaskImageUrls[part.id],
+          partMaskFiles[part.id] || null
+        );
+      });
+      productFinishOptions.forEach((finish) => {
+        appendLocalUpload(
+          formData,
+          uploadedAssets.finishBaseImageUrls[finish],
+          finishBaseFiles[finish] || null
+        );
+        advancedMaterialMapDefinitions.forEach(({ key }) => {
+          appendLocalUpload(
+            formData,
+            uploadedAssets.materialMapImageUrls[finish]?.[key],
+            materialMapFiles[finish]?.[key] || null
+          );
+        });
+      });
+      logoPrintingMethods.forEach((method) => {
+        appendLocalUpload(
+          formData,
+          uploadedAssets.printingAreaImageUrls[method],
+          printingAreaFiles[method] || null
+        );
+      });
+
+      const result = await saveLocalLibraryRelease(formData);
+      applyLocalSnapshot(result.snapshot, result.template);
+      clearPendingAssetFiles();
+      const release = result.snapshot.catalog.products
+        .find((product) => product.slug === result.template.slug)
+        ?.releases.find((item) => item.version === result.version);
+      const warningCopy = release?.warnings.length
+        ? ` ${release.warnings.length} quality note${release.warnings.length === 1 ? "" : "s"} recorded.`
+        : "";
       setSaveMessage(
         status === "published"
-          ? `Published live template v${savedVersion.version} to Supabase.`
-          : `Saved Supabase draft v${savedVersion.version}.`
+          ? `Published ${result.template.name} locally as v${result.version}.${warningCopy}`
+          : `Saved ${result.template.name} draft v${result.version}.${warningCopy}`
       );
     } catch (error) {
       setSaveError(
-        error instanceof Error ? error.message : "Failed to save live template to Supabase."
+        error instanceof Error ? error.message : "Failed to save the Local Studio release."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleImportProductPackage(file: File | null) {
+    if (!file) return;
+    setIsImporting(true);
+    setSaveError(null);
+    setSaveMessage(null);
+
+    try {
+      const result = await importLocalLibraryProduct(file);
+      applyLocalSnapshot(result.snapshot, result.template);
+      clearPendingAssetFiles();
+      setSaveMessage(
+        `Imported ${result.template.name} as local draft v${result.version}. Review it before publishing.`
+      );
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to import the Chili product package."
+      );
+    } finally {
+      setIsImporting(false);
+      if (importInputRef.current) {
+        importInputRef.current.value = "";
+      }
+    }
+  }
+
+  async function handleRollback(version: number) {
+    if (!formState.slug) return;
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveMessage(null);
+
+    try {
+      const result = await rollbackLocalLibraryProduct(formState.slug, version);
+      applyLocalSnapshot(result.snapshot, result.template);
+      clearPendingAssetFiles();
+      setSaveMessage(`Restored ${result.template.name} release v${version} as the local published version.`);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to restore the selected release."
       );
     } finally {
       setIsSaving(false);
@@ -942,134 +1563,46 @@ export default function TemplateSetupStudio({
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (liveDatabaseEnabled) {
-      await handleLiveTemplateSave("draft");
-      return;
-    }
+    await handleLocalTemplateSave("draft");
+  }
 
-    if (!canSaveTemplate) {
-      setSaveError(
-        "This Netlify setup page is preview-only. To save template files back into the repo, open Setup studio on local localhost."
-      );
-      setSaveMessage(null);
-      return;
-    }
+  if (libraryAccess !== "available") {
+    const isChecking = libraryAccess === "checking";
+    const isRemote = libraryAccess === "remote";
 
-    setIsSaving(true);
-    setSaveError(null);
-    setSaveMessage(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("originalSlug", formState.originalSlug);
-      formData.append("slug", formState.slug);
-      formData.append("name", formState.name);
-      formData.append("category", formState.category);
-      formData.append("description", formState.description);
-      formData.append("size", formState.size);
-      formData.append("specifications", JSON.stringify(formState.specifications));
-      formData.append("colorParts", JSON.stringify(formState.colorParts));
-      formData.append(
-        "layeredRender",
-        JSON.stringify({
-          enabled: formState.layeredRenderEnabled,
-          mode: "local-layered",
-          outputSize:
-            formState.layeredOutputWidth && formState.layeredOutputHeight
-              ? {
-                  width: Number(formState.layeredOutputWidth),
-                  height: Number(formState.layeredOutputHeight)
-                }
-              : undefined,
-          fallbackFinish: formState.layeredFallbackFinish,
-          finishBaseImages: formState.layeredFinishBaseImages,
-          partMasks: Object.fromEntries(
-            formState.colorParts
-              .filter((part) => part.partMaskImageFileName)
-              .map((part) => [part.id, part.partMaskImageFileName])
-          ),
-          finishRules: formState.layeredFinishRules
-        })
-      );
-      formData.append(
-        "logoPlacement",
-        JSON.stringify({
-          orientationPreset: formState.logoOrientationPreset,
-          printingAreaImages: formState.logoPrintingAreaImages
-        })
-      );
-      if (formState.baseImageFile) {
-        formData.append("baseImage", formState.baseImageFile);
-      }
-      if (formState.instructionImageFile) {
-        formData.append("instructionImage", formState.instructionImageFile);
-      }
-      formState.colorParts.forEach((part, index) => {
-        const partMaskFile = partMaskFiles[part.id];
-        if (partMaskFile) {
-          formData.append(`partMaskImage:${index}`, partMaskFile);
-        }
-      });
-      productFinishOptions.forEach((finish) => {
-        const finishBaseFile = finishBaseFiles[finish];
-        if (finishBaseFile) {
-          formData.append(`finishBaseImage:${finish}`, finishBaseFile);
-        }
-      });
-      logoPrintingMethods.forEach((method) => {
-        const printingAreaFile = printingAreaFiles[method];
-        if (printingAreaFile) {
-          formData.append(`printingAreaImage:${method}`, printingAreaFile);
-        }
-      });
-
-      const response = await fetch("/api/template-admin/save", {
-        method: "POST",
-        body: formData
-      });
-      const responseText = await response.text();
-      let data: {
-        success?: boolean;
-        error?: string;
-        template?: TemplatePublicDto;
-      } = {};
-
-      if (responseText) {
-        try {
-          data = JSON.parse(responseText) as typeof data;
-        } catch {
-          if (responseText.trim().startsWith("<")) {
-            throw new Error(
-              "This deployment does not expose the template save API. Netlify branch deploy can preview indicator editing, but saving to the repo works on local localhost only."
-            );
-          }
-
-          throw new Error("Save template returned non-JSON content. Please try again.");
-        }
-      }
-
-      if (!response.ok || !data.success || !data.template) {
-        throw new Error(data.error || "Failed to save the product template.");
-      }
-
-      const savedTemplate = data.template as TemplatePublicDto;
-      const nextTemplates = [...templates.filter((template) => template.slug !== savedTemplate.slug), savedTemplate]
-        .sort((left, right) => left.name.localeCompare(right.name));
-
-      setTemplates(nextTemplates);
-      setSelectedSlug(savedTemplate.slug);
-      setFormState(buildFormStateFromTemplate(savedTemplate));
-      setPartMaskFiles({});
-      setFinishBaseFiles({});
-      setSaveMessage("Product template saved locally.");
-      startTransition(() => {
-        router.refresh();
-      });
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Failed to save the product template.");
-    } finally {
-      setIsSaving(false);
-    }
+    return (
+      <main className="setup-page setup-access-page">
+        <header className="catalog-header">
+          <div className="brand-lockup">
+            <ChiliLogo className="brand-logo" />
+          </div>
+          <div className="site-bar-actions">
+            <Link href="/" className="secondary-link-button">
+              Product library
+            </Link>
+            <span className="mode-pill">Local Studio</span>
+          </div>
+        </header>
+        <section className="surface setup-access-panel">
+          <p className="eyebrow">{isChecking ? "Connecting" : "Protected workspace"}</p>
+          <h1 className="hero-title">
+            {isChecking
+              ? "Opening the Local Asset Library"
+              : isRemote
+                ? "Setup Studio is available on localhost only"
+                : "Local Studio API is unavailable"}
+          </h1>
+          <p className="panel-description">
+            {isChecking
+              ? "Checking the local catalog and release history."
+              : isRemote
+                ? "Run this project locally with npm run dev to create, publish, export, or restore product assets. The Netlify deployment does not expose any admin write API."
+                : "Start the project with npm run dev and check the Local Studio configuration in .env.local."}
+          </p>
+          {saveError ? <p className="alert-error inline-alert">{saveError}</p> : null}
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -1082,28 +1615,33 @@ export default function TemplateSetupStudio({
           <Link href="/" className="secondary-link-button">
             Product library
           </Link>
-          <span className="mode-pill">Template setup</span>
+          <span className="mode-pill">Local Studio</span>
         </div>
       </header>
 
       <section className="catalog-hero">
         <div className="hero-copy-stack">
-          <p className="eyebrow">Setup studio</p>
-          <h1 className="hero-title">Configure product templates in the UI</h1>
+          <p className="eyebrow">Product production workspace</p>
+          <h1 className="hero-title">Build and publish reliable product asset packs</h1>
         </div>
         <div className="hero-aside-stack">
           <div className="hero-stat-grid" aria-label="Setup overview">
             <article className="stat-card">
-              <span className="stat-label">Templates</span>
-              <strong className="stat-value">{templates.length}</strong>
+              <span className="stat-label">Products available</span>
+              <strong className="stat-value">{availableProducts.length}</strong>
             </article>
             <article className="stat-card">
               <span className="stat-label">Current mode</span>
               <strong className="stat-value stat-value-compact">{saveModeLabel}</strong>
             </article>
             <article className="stat-card">
-              <span className="stat-label">Selected parts</span>
-              <strong className="stat-value">{formState.colorParts.length}</strong>
+              <span className="stat-label">Local releases</span>
+              <strong className="stat-value">
+                {localSnapshot?.catalog.products.reduce(
+                  (total, product) => total + product.releases.length,
+                  0
+                ) || 0}
+              </strong>
             </article>
           </div>
         </div>
@@ -1111,8 +1649,8 @@ export default function TemplateSetupStudio({
 
       <section className="section-heading-row">
         <div>
-          <p className="panel-kicker">Template workspace</p>
-          <h2 className="section-title">Manage product setup</h2>
+          <p className="panel-kicker">Asset production</p>
+          <h2 className="section-title">Products, materials, print areas, release</h2>
         </div>
       </section>
 
@@ -1120,7 +1658,25 @@ export default function TemplateSetupStudio({
         <aside className="surface setup-sidebar">
           <div className="panel-head">
             <p className="panel-kicker">Products</p>
-            <h2 className="section-title">Template list</h2>
+            <h2 className="section-title">Local catalog</h2>
+            <p className="fine-print local-library-path" title={localSnapshot?.libraryPath}>
+              {localSnapshot?.libraryPath}
+            </p>
+            <input
+              ref={importInputRef}
+              className="visually-hidden"
+              type="file"
+              accept=".zip,.chili-product.zip,application/zip"
+              onChange={(event) => handleImportProductPackage(event.target.files?.[0] || null)}
+            />
+            <button
+              type="button"
+              className="secondary-link-button"
+              disabled={isImporting}
+              onClick={() => importInputRef.current?.click()}
+            >
+              {isImporting ? "Importing..." : "Import product package"}
+            </button>
           </div>
           <div className="setup-sidebar-body">
             <button
@@ -1130,10 +1686,11 @@ export default function TemplateSetupStudio({
             >
               New product
             </button>
-            {templates.map((template) => (
+            {availableProducts.map((template) => (
               <button
                 key={template.slug}
                 type="button"
+                disabled={isLoadingTemplate}
                 className={`list-row-button${selectedSlug === template.slug ? " is-active" : ""}`}
                 onClick={() => selectTemplate(template.slug)}
               >
@@ -1142,6 +1699,58 @@ export default function TemplateSetupStudio({
               </button>
             ))}
           </div>
+          {selectedLocalProduct ? (
+            <div className="local-release-panel">
+              <div className="local-release-heading">
+                <div>
+                  <p className="panel-kicker">Release history</p>
+                  <h3>{selectedLocalProduct.name}</h3>
+                </div>
+                <a
+                  className="text-link"
+                  href={getLocalProductExportUrl(
+                    selectedLocalProduct.slug,
+                    selectedLocalProduct.publishedVersion || selectedLocalProduct.latestVersion
+                  )}
+                  download
+                >
+                  Export ZIP
+                </a>
+              </div>
+              <div className="local-release-list">
+                {selectedLocalProduct.releases.map((release) => {
+                  const isPublished =
+                    selectedLocalProduct.publishedVersion === release.version;
+
+                  return (
+                    <article
+                      className={`local-release-row${isPublished ? " is-published" : ""}`}
+                      key={`${selectedLocalProduct.slug}-v${release.version}`}
+                    >
+                      <div>
+                        <strong>v{release.version}</strong>
+                        <span>{isPublished ? "Published" : release.status}</span>
+                      </div>
+                      <small>
+                        {release.assetCount} assets
+                        {release.warnings.length ? ` · ${release.warnings.length} notes` : ""}
+                      </small>
+                      {!isPublished ? (
+                        <button
+                          type="button"
+                          className="text-link button-reset"
+                          disabled={isSaving}
+                          onClick={() => handleRollback(release.version)}
+                        >
+                          Restore
+                        </button>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </aside>
 
         <section className="surface setup-form-panel">
@@ -1151,25 +1760,27 @@ export default function TemplateSetupStudio({
               {isNewTemplate ? "New template" : formState.name || formState.slug}
             </h2>
             {formState.slug ? (
-              <p className="panel-description">Mockup URL: /mockup/{formState.slug}</p>
+              <p className="panel-description">Local preview: /mockup?slug={formState.slug}</p>
             ) : null}
             <div className="setup-inline-actions">
-              <span className={`status-pill${canSaveTemplate ? " is-complete" : ""}`}>
-                {isLiveTemplateLoading ? "Loading live data..." : saveModeLabel}
+              <span className="status-pill is-complete">{saveModeLabel}</span>
+              <span className="status-pill">
+                {selectedLocalProduct
+                  ? `Latest v${selectedLocalProduct.latestVersion}`
+                  : isNewTemplate
+                    ? "Unsaved product"
+                    : "Repository source"}
               </span>
-              <span className="status-pill">{isNewTemplate ? "Draft template" : "Existing template"}</span>
+              {selectedLocalProduct?.publishedVersion ? (
+                <span className="status-pill is-complete">
+                  Published v{selectedLocalProduct.publishedVersion}
+                </span>
+              ) : null}
             </div>
-            {liveDatabaseEnabled ? (
-              <p className="fine-print">
-                Live database mode now saves template settings plus uploaded images to Supabase.
-                Existing product pages can update without redeploy. Add Supabase Auth/RLS before
-                sharing this setup URL publicly.
-              </p>
-            ) : !canSaveTemplate ? (
-              <p className="fine-print">
-                This Netlify setup page is preview-only. Save template works on local localhost.
-              </p>
-            ) : null}
+            <p className="fine-print">
+              Drafts and published releases are stored outside Git in the Local Asset Library.
+              Unchanged images are deduplicated automatically and every publish can be restored.
+            </p>
             <div className="setup-inline-actions">
               <button
                 type="button"
@@ -1893,15 +2504,39 @@ export default function TemplateSetupStudio({
                 </div>
 
                 <div className="asset-upload-grid">
-                  {productFinishOptions.map((finish) => (
-                    <FinishBaseAssetField
-                      key={`finish-base-${finish}`}
-                      finish={finish}
-                      currentUrl={formState.layeredFinishBaseImages[finish] || ""}
-                      pendingFile={finishBaseFiles[finish] || null}
-                      onFileChange={(file) => handleFinishBaseFileChange(finish, file)}
-                    />
-                  ))}
+                  {activeMaterialFinishes.map((finish) => {
+                    const rule = {
+                      ...defaultLayeredFinishRules[finish],
+                      ...(formState.layeredFinishRules[finish] || {})
+                    };
+
+                    return (
+                      <article className="material-instance-card" key={`finish-base-${finish}`}>
+                        <FinishBaseAssetField
+                          finish={finish}
+                          currentUrl={formState.layeredFinishBaseImages[finish] || ""}
+                          pendingFile={finishBaseFiles[finish] || null}
+                          onFileChange={(file) => handleFinishBaseFileChange(finish, file)}
+                        />
+                        <MaterialCalibrationFields
+                          finish={finish}
+                          rule={rule}
+                          onChange={(key, value) =>
+                            handleFinishRuleChange(finish, key, value)
+                          }
+                        />
+                        <MaterialMapAssetFields
+                          finish={finish}
+                          currentMaps={formState.layeredMaterialMaps[finish] || {}}
+                          pendingFiles={materialMapFiles[finish] || {}}
+                          onFileChange={(key, file) =>
+                            handleMaterialMapFileChange(finish, key, file)
+                          }
+                          onRemove={(key) => handleMaterialMapRemove(finish, key)}
+                        />
+                      </article>
+                    );
+                  })}
                 </div>
               </div>
             </section>
@@ -1909,40 +2544,41 @@ export default function TemplateSetupStudio({
             <div className="setup-footer">
               {saveError ? <p className="alert-error inline-alert">{saveError}</p> : null}
               {saveMessage ? <p className="success-message">{saveMessage}</p> : null}
+              {selectedLocalProduct?.releases[0]?.warnings.length ? (
+                <div className="local-quality-notes">
+                  <strong>Quality notes for v{selectedLocalProduct.releases[0].version}</strong>
+                  <ul>
+                    {selectedLocalProduct.releases[0].warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               <div className="setup-footer-actions">
-                {!isNewTemplate && formState.slug ? (
-                  <Link href={`/mockup/${formState.slug}`} className="secondary-link-button">
-                    Open mockup
+                {formState.slug ? (
+                  <Link
+                    href={`/mockup?slug=${encodeURIComponent(formState.slug)}&preview=latest`}
+                    className="secondary-link-button"
+                  >
+                    Preview latest
                   </Link>
                 ) : null}
-                {liveDatabaseEnabled ? (
-                  <button
-                    className="secondary-link-button"
-                    type="button"
-                    disabled={isSaving || isNewTemplate}
-                    title="Publish this template version to the live mockup page"
-                    onClick={() => handleLiveTemplateSave("published")}
-                  >
-                    {isSaving ? "Saving..." : "Publish live"}
-                  </button>
-                ) : null}
+                <button
+                  className="secondary-link-button"
+                  type="button"
+                  disabled={isSaving || !canSaveTemplate}
+                  title="Validate and publish a new immutable Local Studio release"
+                  onClick={() => handleLocalTemplateSave("published")}
+                >
+                  {isSaving ? "Working..." : "Publish locally"}
+                </button>
                 <button
                   className="button-primary"
                   type="submit"
                   disabled={isSaving || !canSaveTemplate}
-                  title={
-                    canSaveTemplate
-                      ? "Save template"
-                      : "Save template is available on local localhost only"
-                  }
+                  title="Validate and save an immutable local draft"
                 >
-                  {isSaving
-                    ? "Saving..."
-                    : liveDatabaseEnabled
-                      ? "Save draft"
-                      : canSaveTemplate
-                        ? "Save template"
-                        : "Local save only"}
+                  {isSaving ? "Working..." : "Save draft"}
                 </button>
               </div>
             </div>

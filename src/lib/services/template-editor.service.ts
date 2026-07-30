@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { AppError } from "@/lib/errors";
 import {
+  defaultLayeredFinishRules,
   normalizeProductFinishOption,
   productFinishOptions,
   resolvePartDefaultFinish,
@@ -43,44 +44,6 @@ const layeredMaterialMapKeys: LayeredMaterialMapKey[] = [
   "specular",
   "edgeAo"
 ];
-
-const defaultLayeredFinishRules: Record<ProductFinishOption, LayeredRenderFinishRule> = {
-  matte: {
-    colorOpacity: 0.98,
-    blendMode: "source-over",
-    highlightProtection: 0.14,
-    textureStrength: 0.18,
-    saturationBoost: 0.05
-  },
-  glossy: {
-    colorOpacity: 0.97,
-    blendMode: "source-over",
-    highlightProtection: 0.28,
-    textureStrength: 0.18,
-    saturationBoost: 0.08
-  },
-  rubber: {
-    colorOpacity: 0.98,
-    blendMode: "source-over",
-    highlightProtection: 0.2,
-    textureStrength: 0.18,
-    saturationBoost: 0.06
-  },
-  metallic: {
-    colorOpacity: 0.96,
-    blendMode: "source-over",
-    highlightProtection: 0.34,
-    textureStrength: 0.2,
-    saturationBoost: 0.04
-  },
-  chrome: {
-    colorOpacity: 0.16,
-    blendMode: "source-over",
-    highlightProtection: 0.72,
-    textureStrength: 0.34,
-    saturationBoost: 0
-  }
-};
 
 type LayeredRenderFormPayload = {
   enabled?: unknown;
