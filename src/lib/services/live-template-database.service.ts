@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { loadPantoneLibrary } from "@/lib/services/pantone-library.service";
 import type { TemplatePublicDto, TemplateSummaryDto } from "@/lib/types";
 import { parseTemplatePublicDto } from "@/lib/validators/template-public.validator";
 
@@ -14,6 +15,7 @@ type LiveTemplateRow = {
 
 type LiveTemplatePayload = Omit<TemplatePublicDto, "pantoneOptions"> & {
   pantoneOptions?: TemplatePublicDto["pantoneOptions"];
+  pantoneLibrary?: string;
 };
 
 const summaryPayloadSchema = z.object({
@@ -28,23 +30,25 @@ const summaryPayloadSchema = z.object({
 });
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+const supabasePublishableKey =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
 let supabaseClient: SupabaseClient | null = null;
 
 export function isLiveTemplateDatabaseConfigured() {
-  return Boolean(supabaseUrl && supabaseAnonKey);
+  return Boolean(supabaseUrl && supabasePublishableKey);
 }
 
 function getLiveSupabaseClient() {
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabasePublishableKey) {
     throw new Error(
-      "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY."
     );
   }
 
   if (!supabaseClient) {
-    supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+    supabaseClient = createClient(supabaseUrl, supabasePublishableKey);
   }
 
   return supabaseClient;
@@ -54,9 +58,16 @@ function hydratePublishedTemplate(
   payload: LiveTemplatePayload,
   fallbackTemplate?: TemplatePublicDto
 ) {
+  const pantoneOptions =
+    payload.pantoneOptions?.length
+      ? payload.pantoneOptions
+      : fallbackTemplate?.pantoneOptions?.length
+        ? fallbackTemplate.pantoneOptions
+        : loadPantoneLibrary(payload.pantoneLibrary || "pantone-solid-coated-v3");
+
   return parseTemplatePublicDto({
     ...payload,
-    pantoneOptions: payload.pantoneOptions || fallbackTemplate?.pantoneOptions || []
+    pantoneOptions
   });
 }
 

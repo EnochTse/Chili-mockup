@@ -11,6 +11,8 @@ export type ErrorCode =
   | "INVALID_LOGO_PRINT_COLOR"
   | "INVALID_LOGO_FILE"
   | "LOGO_FILE_TOO_LARGE"
+  | "ONLINE_PUBLISH_NOT_CONFIGURED"
+  | "ONLINE_PUBLISH_FAILED"
   | "INVALID_FORM_DATA"
   | "INTERNAL_SERVER_ERROR";
 
@@ -42,6 +44,10 @@ const defaultMessages: Record<ErrorCode, string> = {
     "The selected logo print color is not available for this product.",
   INVALID_LOGO_FILE: "Please upload a valid logo file.",
   LOGO_FILE_TOO_LARGE: "This logo file is too large.",
+  ONLINE_PUBLISH_NOT_CONFIGURED:
+    "Online publishing is not configured on this Local Studio.",
+  ONLINE_PUBLISH_FAILED:
+    "The product could not be published online. The local release is unchanged.",
   INVALID_FORM_DATA: "Please complete all required mockup fields.",
   INTERNAL_SERVER_ERROR: "Something went wrong while processing the request."
 };

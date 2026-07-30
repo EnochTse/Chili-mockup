@@ -52,8 +52,9 @@ Local Studio rejects files with a false extension, invalid image signature, exce
 6. If needed, open Advanced calibrated maps and add only the map that needs correction
 7. Save draft
 8. Open Preview latest and test representative colors
-9. Publish locally
-10. Export a portable product ZIP when a backup or handoff is needed
+9. Publish to local preview
+10. Select Publish online only after the local preview is approved
+11. Export a portable product ZIP when a backup or handoff is needed
 ```
 
 Representative QC colors should include white, black, neutral gray, bright red, yellow, and dark blue.
@@ -93,7 +94,25 @@ MAX_PRODUCT_PACKAGE_SIZE_MB=512
 - The remote `/setup` page is locked and does not expose Supabase anonymous writes.
 - Local blobs are served with immutable private caching and `nosniff`.
 
-The repository includes `supabase/migrations/20260730_lock_public_template_writes.sql`. Apply it in Supabase before treating the current cloud project as secure. The migration removes temporary anonymous write policies, allows public reads only for published versions, and reserves cloud writes for authenticated emails listed in `admin_emails`.
+The repository includes `supabase/migrations/20260730_create_cloud_publish_schema.sql`.
+Apply it once in Supabase before the first online publish. It creates the version tables,
+transactional publish function, public asset bucket restrictions, and RLS policies from an
+empty project. Public clients can read published versions only.
+
+`SUPABASE_SECRET_KEY` is used only by the localhost Next.js process. It must stay in
+`.env.local`, must never use a `NEXT_PUBLIC_` prefix, and must never be added to Netlify.
+The remote Setup page remains locked, so the privileged publisher is not deployed.
+
+## Online Publishing
+
+`Publish online` uploads each content-addressed blob to
+`mockup-assets/blobs/<hash-prefix>/<sha256>.<extension>`. Existing hashes are reused, so a
+new product version does not upload unchanged 4K images again. After all assets are
+available, one database function archives the previous published version, creates the next
+immutable version, and updates the product pointer in a single transaction.
+
+The Netlify site uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to read published rows. It
+never receives the secret key and cannot write templates or Storage objects.
 
 ## Future Server Migration
 
@@ -107,10 +126,9 @@ ReleasePublisher
 
 Migration steps:
 
-1. Upload content-addressed blobs to object storage.
-2. Import product and release manifests into the metadata database.
-3. Replace the localhost API adapter with an authenticated server adapter.
-4. Point published blob references at the CDN.
-5. Keep the renderer, material calculations, Setup form, and product packages unchanged.
+1. Move the existing content-addressed blobs from Supabase Storage if required.
+2. Import the existing product version rows into the server database.
+3. Replace the localhost publisher with an authenticated server adapter.
+4. Keep the renderer, material calculations, Setup form, and product packages unchanged.
 
 Server-side image derivatives and background QC workers can be added later without changing the source asset-pack contract.

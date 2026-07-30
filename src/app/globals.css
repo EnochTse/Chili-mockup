@@ -1735,6 +1735,7 @@ input[type="file"].input-shell::file-selector-button {
 
 .setup-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-16);
@@ -2763,6 +2764,28 @@ input[type="file"].input-shell::file-selector-button {
   background: #fff8e8;
   color: #5f430f;
   font-size: 12px;
+}
+
+.online-publish-note {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 4px;
+  padding: 12px 14px;
+  border-left: 3px solid #8f9489;
+  background: #f3f4f1;
+  color: #4c5148;
+  font-size: 12px;
+}
+
+.online-publish-note.is-ready {
+  border-left-color: #627b43;
+  background: #f2f7e9;
+  color: #38482c;
+}
+
+.online-publish-note strong,
+.online-publish-note span {
+  display: block;
 }
 
 .local-quality-notes strong {

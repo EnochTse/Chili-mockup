@@ -9,6 +9,7 @@ import {
 } from "@/lib/local-library/asset-reference";
 import type {
   LocalLibrarySnapshot,
+  OnlinePublishConfiguration,
   LocalProductCatalogView,
   LocalReleaseStatus
 } from "@/lib/local-library/types";
@@ -22,8 +23,10 @@ import {
   getLocalLibraryClientSnapshot,
   getLocalLibraryTemplate,
   getLocalProductExportUrl,
+  getOnlinePublishClientConfiguration,
   importLocalLibraryProduct,
   isLocalStudioBrowser,
+  publishLocalLibraryProductOnline,
   rollbackLocalLibraryProduct,
   saveLocalLibraryRelease
 } from "@/lib/services/local-library.client";
@@ -1030,12 +1033,15 @@ export default function TemplateSetupStudio({
     finish: ProductFinishOption;
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPublishingOnline, setIsPublishingOnline] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
   const [libraryAccess, setLibraryAccess] = useState<
     "checking" | "available" | "remote" | "unavailable"
   >("checking");
   const [localSnapshot, setLocalSnapshot] = useState<LocalLibrarySnapshot | null>(null);
+  const [onlineConfiguration, setOnlineConfiguration] =
+    useState<OnlinePublishConfiguration | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const baseImagePreviewUrl = useResolvedAssetPreview(
@@ -1098,6 +1104,16 @@ export default function TemplateSetupStudio({
       localSnapshot?.catalog.products.find((product) => product.slug === formState.slug) || null,
     [formState.slug, localSnapshot]
   );
+  const onlinePublicationIsCurrent = Boolean(
+    selectedLocalProduct?.onlinePublication &&
+      selectedLocalProduct.onlinePublication.sourceLocalVersion ===
+        selectedLocalProduct.publishedVersion
+  );
+  const canPublishOnline = Boolean(
+    onlineConfiguration?.configured &&
+      selectedLocalProduct?.publishedVersion &&
+      !isLoadingTemplate
+  );
   const logoPrintingMethods =
     selectedTemplate?.allowedPrintingMethods?.length
       ? selectedTemplate.allowedPrintingMethods
@@ -1119,6 +1135,20 @@ export default function TemplateSetupStudio({
     }
 
     let isCancelled = false;
+
+    getOnlinePublishClientConfiguration()
+      .then((configuration) => {
+        if (!isCancelled) setOnlineConfiguration(configuration);
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setOnlineConfiguration({
+            configured: false,
+            bucket: "mockup-assets",
+            missing: ["Local Supabase configuration"]
+          });
+        }
+      });
 
     getLocalLibraryClientSnapshot()
       .then(async (snapshot) => {
@@ -1541,6 +1571,44 @@ export default function TemplateSetupStudio({
     }
   }
 
+  async function handleOnlinePublish() {
+    if (!formState.slug || !selectedLocalProduct?.publishedVersion) {
+      setSaveError("Publish this product to the local preview before publishing it online.");
+      setSaveMessage(null);
+      return;
+    }
+    if (!onlineConfiguration?.configured) {
+      setSaveError(
+        `Online publishing needs ${onlineConfiguration?.missing.join(", ") || "Supabase configuration"} in .env.local.`
+      );
+      setSaveMessage(null);
+      return;
+    }
+
+    setIsPublishingOnline(true);
+    setSaveError(null);
+    setSaveMessage(null);
+
+    try {
+      const result = await publishLocalLibraryProductOnline(formState.slug);
+      const publishedProduct = result.snapshot.catalog.products.find(
+        (product) => product.slug === result.slug
+      );
+      setLocalSnapshot(result.snapshot);
+      setSaveMessage(
+        `Published ${publishedProduct?.name || formState.name} online as v${result.onlineVersion} from local v${result.localVersion}. ` +
+          `${result.uploadedAssetCount} new asset${result.uploadedAssetCount === 1 ? "" : "s"} uploaded and ` +
+          `${result.reusedAssetCount} reused.`
+      );
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Failed to publish this product online."
+      );
+    } finally {
+      setIsPublishingOnline(false);
+    }
+  }
+
   async function handleRollback(version: number) {
     if (!formState.slug) return;
     setIsSaving(true);
@@ -1729,17 +1797,17 @@ export default function TemplateSetupStudio({
                     >
                       <div>
                         <strong>v{release.version}</strong>
-                        <span>{isPublished ? "Published" : release.status}</span>
+                        <span>{isPublished ? "Local preview" : release.status}</span>
                       </div>
                       <small>
                         {release.assetCount} assets
-                        {release.warnings.length ? ` · ${release.warnings.length} notes` : ""}
+                        {release.warnings.length ? ` / ${release.warnings.length} notes` : ""}
                       </small>
                       {!isPublished ? (
                         <button
                           type="button"
                           className="text-link button-reset"
-                          disabled={isSaving}
+                          disabled={isSaving || isPublishingOnline}
                           onClick={() => handleRollback(release.version)}
                         >
                           Restore
@@ -1773,13 +1841,22 @@ export default function TemplateSetupStudio({
               </span>
               {selectedLocalProduct?.publishedVersion ? (
                 <span className="status-pill is-complete">
-                  Published v{selectedLocalProduct.publishedVersion}
+                  Local preview v{selectedLocalProduct.publishedVersion}
+                </span>
+              ) : null}
+              {selectedLocalProduct?.onlinePublication ? (
+                <span
+                  className={`status-pill${onlinePublicationIsCurrent ? " is-complete" : ""}`}
+                >
+                  Online v{selectedLocalProduct.onlinePublication.onlineVersion} / local v
+                  {selectedLocalProduct.onlinePublication.sourceLocalVersion}
+                  {onlinePublicationIsCurrent ? "" : " / update needed"}
                 </span>
               ) : null}
             </div>
             <p className="fine-print">
-              Drafts and published releases are stored outside Git in the Local Asset Library.
-              Unchanged images are deduplicated automatically and every publish can be restored.
+              Drafts and local preview releases are stored outside Git. Publish Online uploads
+              content-addressed assets to Supabase and makes only the published version public.
             </p>
             <div className="setup-inline-actions">
               <button
@@ -2544,6 +2621,24 @@ export default function TemplateSetupStudio({
             <div className="setup-footer">
               {saveError ? <p className="alert-error inline-alert">{saveError}</p> : null}
               {saveMessage ? <p className="success-message">{saveMessage}</p> : null}
+              <div
+                className={`online-publish-note${
+                  onlineConfiguration?.configured ? " is-ready" : ""
+                }`}
+              >
+                <strong>
+                  {onlineConfiguration?.configured
+                    ? "Supabase online publishing ready"
+                    : "Supabase online publishing not configured"}
+                </strong>
+                <span>
+                  {onlineConfiguration?.configured
+                    ? `Publishes the current local preview release to ${onlineConfiguration.bucket}.`
+                    : onlineConfiguration
+                      ? `Missing: ${onlineConfiguration.missing.join(", ")}.`
+                      : "Checking local Supabase configuration..."}
+                </span>
+              </div>
               {selectedLocalProduct?.releases[0]?.warnings.length ? (
                 <div className="local-quality-notes">
                   <strong>Quality notes for v{selectedLocalProduct.releases[0].version}</strong>
@@ -2566,19 +2661,37 @@ export default function TemplateSetupStudio({
                 <button
                   className="secondary-link-button"
                   type="button"
-                  disabled={isSaving || !canSaveTemplate}
-                  title="Validate and publish a new immutable Local Studio release"
+                  disabled={isSaving || isPublishingOnline || !canSaveTemplate}
+                  title="Validate and publish a release for localhost preview"
                   onClick={() => handleLocalTemplateSave("published")}
                 >
-                  {isSaving ? "Working..." : "Publish locally"}
+                  {isSaving ? "Working..." : "Publish to local preview"}
                 </button>
                 <button
-                  className="button-primary"
+                  className="secondary-link-button"
                   type="submit"
-                  disabled={isSaving || !canSaveTemplate}
+                  disabled={isSaving || isPublishingOnline || !canSaveTemplate}
                   title="Validate and save an immutable local draft"
                 >
                   {isSaving ? "Working..." : "Save draft"}
+                </button>
+                <button
+                  className="button-primary"
+                  type="button"
+                  disabled={
+                    isSaving ||
+                    isPublishingOnline ||
+                    !canSaveTemplate ||
+                    !canPublishOnline
+                  }
+                  title={
+                    canPublishOnline
+                      ? "Publish the current local preview release to Supabase"
+                      : "Publish a local preview release and configure Supabase first"
+                  }
+                  onClick={handleOnlinePublish}
+                >
+                  {isPublishingOnline ? "Publishing online..." : "Publish online"}
                 </button>
               </div>
             </div>
