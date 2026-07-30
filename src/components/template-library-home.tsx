@@ -7,6 +7,10 @@ import {
   isLiveTemplateDatabaseConfigured,
   listPublishedLiveTemplateSummaries
 } from "@/lib/services/live-template-database.service";
+import {
+  getLocalLibraryClientSnapshot,
+  isLocalStudioBrowser
+} from "@/lib/services/local-library.client";
 import type { TemplateSummaryDto } from "@/lib/types";
 
 type TemplateLibraryHomeProps = {
@@ -15,13 +19,11 @@ type TemplateLibraryHomeProps = {
 
 function mergePublishedSummaries(
   initialTemplates: TemplateSummaryDto[],
-  liveTemplates: TemplateSummaryDto[]
+  overridingTemplates: TemplateSummaryDto[]
 ) {
-  const initialSlugs = new Set(initialTemplates.map((template) => template.slug));
   const templatesBySlug = new Map(initialTemplates.map((template) => [template.slug, template]));
 
-  for (const template of liveTemplates) {
-    if (!initialSlugs.has(template.slug)) continue;
+  for (const template of overridingTemplates) {
     templatesBySlug.set(template.slug, template);
   }
 
@@ -34,18 +36,50 @@ export default function TemplateLibraryHome({
   initialTemplates
 }: TemplateLibraryHomeProps) {
   const [templates, setTemplates] = useState(initialTemplates);
+  const [showLocalStudioLink, setShowLocalStudioLink] = useState(false);
+  const [localPublishedSlugs, setLocalPublishedSlugs] = useState<Set<string>>(
+    () => new Set()
+  );
 
   useEffect(() => {
-    if (!isLiveTemplateDatabaseConfigured()) return;
-
     let isCancelled = false;
+    const localBrowser = isLocalStudioBrowser();
+    setShowLocalStudioLink(localBrowser);
 
-    listPublishedLiveTemplateSummaries(initialTemplates)
-      .then((liveTemplates) => {
-        if (isCancelled) return;
-        setTemplates(mergePublishedSummaries(initialTemplates, liveTemplates));
-      })
-      .catch(() => undefined);
+    async function loadPublishedCatalog() {
+      let nextTemplates = initialTemplates;
+
+      if (isLiveTemplateDatabaseConfigured()) {
+        try {
+          const liveTemplates = await listPublishedLiveTemplateSummaries(initialTemplates);
+          nextTemplates = mergePublishedSummaries(nextTemplates, liveTemplates);
+        } catch {
+          // Keep checked-in products available while live data is temporarily unavailable.
+        }
+      }
+
+      if (localBrowser) {
+        try {
+          const snapshot = await getLocalLibraryClientSnapshot();
+          if (isCancelled) return;
+          setLocalPublishedSlugs(
+            new Set(snapshot.publishedSummaries.map((template) => template.slug))
+          );
+          nextTemplates = mergePublishedSummaries(
+            nextTemplates,
+            snapshot.publishedSummaries
+          );
+        } catch {
+          // Local Studio may be disabled while the public catalog remains usable.
+        }
+      }
+
+      if (!isCancelled) {
+        setTemplates(nextTemplates);
+      }
+    }
+
+    void loadPublishedCatalog();
 
     return () => {
       isCancelled = true;
@@ -53,6 +87,13 @@ export default function TemplateLibraryHome({
   }, [initialTemplates]);
 
   const firstTemplate = templates[0] || null;
+  const checkedInSlugs = new Set(initialTemplates.map((template) => template.slug));
+
+  function getMockupHref(slug: string) {
+    return localPublishedSlugs.has(slug) || !checkedInSlugs.has(slug)
+      ? `/mockup?slug=${encodeURIComponent(slug)}`
+      : `/mockup/${slug}`;
+  }
 
   return (
     <main className="catalog-page">
@@ -61,9 +102,11 @@ export default function TemplateLibraryHome({
           <ChiliLogo className="brand-logo" />
         </div>
         <div className="site-bar-actions">
-          <Link href="/setup" className="secondary-link-button">
-            Setup studio
-          </Link>
+          {showLocalStudioLink ? (
+            <Link href="/setup" className="secondary-link-button">
+              Local Studio
+            </Link>
+          ) : null}
           <span className="mode-pill">Template library</span>
         </div>
       </header>
@@ -75,15 +118,17 @@ export default function TemplateLibraryHome({
           <div className="hero-action-row">
             {firstTemplate ? (
               <Link
-                href={`/mockup/${firstTemplate.slug}`}
+                href={getMockupHref(firstTemplate.slug)}
                 className="button-primary hero-link-button"
               >
                 Open first mockup
               </Link>
             ) : null}
-            <Link href="/setup" className="secondary-link-button">
-              Manage template setup
-            </Link>
+            {showLocalStudioLink ? (
+              <Link href="/setup" className="secondary-link-button">
+                Manage local products
+              </Link>
+            ) : null}
           </div>
         </div>
       </section>
@@ -100,7 +145,7 @@ export default function TemplateLibraryHome({
           {templates.map((template) => (
             <Link
               key={template.slug}
-              href={`/mockup/${template.slug}`}
+              href={getMockupHref(template.slug)}
               className="catalog-card"
             >
               <div className="catalog-image-frame">
@@ -116,7 +161,7 @@ export default function TemplateLibraryHome({
                 <div className="catalog-card-footer">
                   <span className="catalog-link-copy">Open mockup workspace</span>
                   <span className="catalog-link-arrow" aria-hidden="true">
-                    â†’
+                    &rarr;
                   </span>
                 </div>
               </div>

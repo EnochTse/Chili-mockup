@@ -1,13 +1,14 @@
 import TemplateSetupStudio from "@/components/template-setup-studio";
-import { listTemplateSlugs, loadTemplate, toTemplatePublicDto } from "@/lib/services/template.service";
+import { loadPantoneLibrary } from "@/lib/services/pantone-library.service";
+import { listTemplateSummaries } from "@/lib/services/template.service";
 
 export default async function SetupPage() {
-  const slugs = await listTemplateSlugs();
-  const templates = await Promise.all(slugs.map((slug) => loadTemplate(slug)));
+  const templates = await listTemplateSummaries();
 
   return (
     <TemplateSetupStudio
-      initialTemplates={templates.map((template) => toTemplatePublicDto(template))}
+      initialTemplates={templates}
+      pantoneOptions={loadPantoneLibrary("pantone-solid-coated-v3")}
     />
   );
 }
