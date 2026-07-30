@@ -73,11 +73,12 @@ const netlifyEnv = [
   "NODE_ENV=production",
   `NEXT_PUBLIC_SHOW_DEBUG=${readValue(localEnv.get("NEXT_PUBLIC_SHOW_DEBUG"), exampleEnv.get("NEXT_PUBLIC_SHOW_DEBUG"), "false")}`,
   "",
-  "# Optional Supabase live Setup Studio database.",
+  "# Supabase published-product reads. Never add SUPABASE_SECRET_KEY to Netlify.",
   `NEXT_PUBLIC_SUPABASE_URL=${readValue(localEnv.get("NEXT_PUBLIC_SUPABASE_URL"), exampleEnv.get("NEXT_PUBLIC_SUPABASE_URL"))}`,
+  `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${readValue(localEnv.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"), localEnv.get("NEXT_PUBLIC_SUPABASE_ANON_KEY"), exampleEnv.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"), exampleEnv.get("NEXT_PUBLIC_SUPABASE_ANON_KEY"))}`,
   `NEXT_PUBLIC_SUPABASE_ANON_KEY=${readValue(localEnv.get("NEXT_PUBLIC_SUPABASE_ANON_KEY"), exampleEnv.get("NEXT_PUBLIC_SUPABASE_ANON_KEY"))}`,
   "",
-  "# Setup Studio image uploads are local-only until Supabase Storage is connected.",
+  "# Browser upload limits.",
   `MAX_UPLOAD_SIZE_MB=${readValue(localEnv.get("MAX_UPLOAD_SIZE_MB"), exampleEnv.get("MAX_UPLOAD_SIZE_MB"), "4")}`,
   ""
 ].join("\n");

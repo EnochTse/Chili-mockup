@@ -11,6 +11,7 @@ import {
   getLocalLibrarySnapshot,
   getLocalTemplate,
   importLocalProductPackage,
+  recordOnlinePublication,
   rollbackLocalProduct,
   saveLocalReleaseFromFormData
 } from "@/lib/services/local-library.service";
@@ -208,6 +209,24 @@ describe("Local Asset Library", () => {
     expect(published.snapshot.publishedSummaries).toHaveLength(1);
     expect(published.snapshot).not.toHaveProperty("templates");
     expect(published.snapshot.catalog.products[0].releases).toHaveLength(2);
+
+    const onlineSnapshot = await recordOnlinePublication("test-bottle", {
+      onlineVersion: 3,
+      sourceLocalVersion: 2,
+      publishedAt: "2026-07-30T00:00:00.000Z",
+      assetCount: 5,
+      totalBytes: 160
+    });
+    expect(onlineSnapshot.catalog.products[0].onlinePublication).toEqual({
+      onlineVersion: 3,
+      sourceLocalVersion: 2,
+      publishedAt: "2026-07-30T00:00:00.000Z",
+      assetCount: 5,
+      totalBytes: 160
+    });
+    expect(
+      (await getLocalLibrarySnapshot()).catalog.products[0].onlinePublication
+    ).toEqual(onlineSnapshot.catalog.products[0].onlinePublication);
 
     const lightweightSnapshot = await getLocalLibrarySnapshot();
     expect(lightweightSnapshot.catalog.products[0].releaseCount).toBe(2);

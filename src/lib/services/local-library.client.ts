@@ -3,6 +3,8 @@
 import type {
   LocalImportResult,
   LocalLibrarySnapshot,
+  OnlinePublishConfiguration,
+  OnlinePublishResult,
   LocalReleaseMutationResult,
   LocalRollbackResult,
   LocalTemplateLookupResult
@@ -58,6 +60,17 @@ export async function getLocalLibraryClientSnapshot() {
   return payload.snapshot;
 }
 
+export async function getOnlinePublishClientConfiguration() {
+  const response = await fetch("/api/local-library/online", {
+    cache: "no-store"
+  });
+  const payload = await readApiResponse<{
+    success: true;
+    configuration: OnlinePublishConfiguration;
+  }>(response);
+  return payload.configuration;
+}
+
 export async function getLocalLibraryTemplate(
   slug: string,
   channel: "latest" | "published" = "published",
@@ -95,6 +108,16 @@ export async function rollbackLocalLibraryProduct(slug: string, version: number)
     }
   );
   return readApiResponse<LocalRollbackResult>(response);
+}
+
+export async function publishLocalLibraryProductOnline(slug: string) {
+  const response = await fetch(
+    `/api/local-library/${encodeURIComponent(slug)}/publish-online`,
+    {
+      method: "POST"
+    }
+  );
+  return readApiResponse<OnlinePublishResult>(response);
 }
 
 export async function importLocalLibraryProduct(file: File) {

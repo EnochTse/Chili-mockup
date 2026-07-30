@@ -47,6 +47,14 @@ export type LocalReleaseSummary = {
   warnings: string[];
 };
 
+export type LocalOnlinePublication = {
+  onlineVersion: number;
+  sourceLocalVersion: number;
+  publishedAt: string;
+  assetCount: number;
+  totalBytes: number;
+};
+
 export type LocalProductCatalogEntry = {
   slug: string;
   name: string;
@@ -55,6 +63,7 @@ export type LocalProductCatalogEntry = {
   latestDraftVersion?: number;
   publishedVersion?: number;
   publishedSummary?: TemplateSummaryDto;
+  onlinePublication?: LocalOnlinePublication;
   releases: LocalReleaseSummary[];
 };
 
@@ -104,5 +113,23 @@ export type LocalImportResult = {
   success: true;
   version: number;
   template: TemplatePublicDto;
+  snapshot: LocalLibrarySnapshot;
+};
+
+export type OnlinePublishConfiguration = {
+  configured: boolean;
+  bucket: string;
+  missing: string[];
+};
+
+export type OnlinePublishResult = {
+  success: true;
+  slug: string;
+  localVersion: number;
+  onlineVersion: number;
+  publishedAt: string;
+  uploadedAssetCount: number;
+  reusedAssetCount: number;
+  totalBytes: number;
   snapshot: LocalLibrarySnapshot;
 };

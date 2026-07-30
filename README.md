@@ -45,13 +45,14 @@ Use `/setup` on localhost to create and version product asset packs. Setup Studi
 
 Local Studio provides:
 
-- Immutable draft and published releases.
+- Immutable draft and local-preview releases.
 - Content-addressed assets, so unchanged images are not duplicated between releases.
 - A lightweight catalog that loads only the selected full product, suitable for 300+ products.
 - Alignment, file-signature, size, and lossless-mask validation before save.
 - Published-version rollback without deleting release history.
 - Portable `.chili-product.zip` export and import.
 - Local draft preview at `/mockup?slug=<slug>&preview=latest`.
+- Optional one-click publishing of the current local-preview release to Supabase.
 
 Pantone colors remain runtime overlays. Do not create one image per Pantone color.
 
@@ -69,7 +70,14 @@ Netlify deploys this project as a static export:
 
 The branch deploy reads checked-in templates and Supabase-published assets. The Local Asset Library is intentionally excluded from Git and Netlify builds. Netlify exposes a locked Setup page and no admin write API.
 
-Code updates are deployed through a Git branch. Product releases remain in the Local Asset Library until a future authenticated cloud/server adapter synchronizes the same asset-pack format.
+Code updates are deployed through a Git branch. Product updates use `Publish online` from
+localhost: content-addressed assets are uploaded to Supabase Storage, an immutable published
+version is written to Postgres, and the static Netlify site reads it without a rebuild.
+
+Online publishing requires `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SECRET_KEY` in
+`.env.local`. Never add the secret key to Netlify or any `NEXT_PUBLIC_` variable. Apply
+`supabase/migrations/20260730_create_cloud_publish_schema.sql` before the first publish.
 
 ## Testing
 
@@ -84,6 +92,6 @@ npm run build
 - Pantone previews are screen approximations.
 - Every supported material needs a reference image made for that product and view.
 - Finish, part-mask, material-map, and print-area layers for one view must share an aspect ratio and camera alignment; differing resolutions are scaled with a quality note.
-- Local products are available on the current machine only until a cloud/server adapter is configured.
+- Local drafts remain on the current machine; only an explicit `Publish online` action uploads a release.
 - Generated images are visual references only.
 - Final artwork, logo scale, print process, and production files require design-team confirmation.

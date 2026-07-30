@@ -17,6 +17,7 @@ import {
   type LocalImportResult,
   type LocalLibraryCatalog,
   type LocalLibrarySnapshot,
+  type LocalOnlinePublication,
   type LocalProductCatalogEntry,
   type LocalProductCatalogView,
   type LocalReleaseManifest,
@@ -88,6 +89,15 @@ const localProductCatalogEntrySchema = z.object({
   latestDraftVersion: z.number().int().positive().optional(),
   publishedVersion: z.number().int().positive().optional(),
   publishedSummary: templateSummarySchema.optional(),
+  onlinePublication: z
+    .object({
+      onlineVersion: z.number().int().positive(),
+      sourceLocalVersion: z.number().int().positive(),
+      publishedAt: z.string().min(1),
+      assetCount: z.number().int().nonnegative(),
+      totalBytes: z.number().int().nonnegative()
+    })
+    .optional(),
   releases: z.array(localReleaseSummarySchema)
 });
 
@@ -157,6 +167,14 @@ export function isLocalStudioServerEnabled() {
   return true;
 }
 
+function isSameLocalOrigin(left: URL, right: URL) {
+  return (
+    localHostnames.has(left.hostname.toLowerCase()) &&
+    localHostnames.has(right.hostname.toLowerCase()) &&
+    left.protocol === right.protocol
+  );
+}
+
 export function assertLocalStudioRequest(request: Request) {
   if (!isLocalStudioServerEnabled()) {
     throw new AppError("PRODUCT_TEMPLATE_NOT_FOUND", "Local Studio is disabled.", 404);
@@ -178,6 +196,7 @@ export function assertLocalStudioRequest(request: Request) {
     );
   }
 
+  const fetchSite = request.headers.get("sec-fetch-site")?.toLowerCase();
   const origin = request.headers.get("origin");
   if (origin) {
     let originUrl: URL;
@@ -186,7 +205,13 @@ export function assertLocalStudioRequest(request: Request) {
     } catch {
       throw new AppError("INVALID_FORM_DATA", "Invalid Local Studio request origin.", 403);
     }
-    if (originUrl.origin !== requestUrl.origin) {
+    if (
+      originUrl.origin !== requestUrl.origin &&
+      !(
+        isSameLocalOrigin(originUrl, requestUrl) &&
+        (fetchSite === "same-origin" || fetchSite === "none")
+      )
+    ) {
       throw new AppError(
         "INVALID_FORM_DATA",
         "Cross-origin Local Studio requests are not allowed.",
@@ -195,7 +220,6 @@ export function assertLocalStudioRequest(request: Request) {
     }
   }
 
-  const fetchSite = request.headers.get("sec-fetch-site")?.toLowerCase();
   if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
     throw new AppError(
       "INVALID_FORM_DATA",
@@ -471,6 +495,59 @@ export async function getLocalTemplate(
     release: product.releases.find((release) => release.version === version) || null,
     product: toProductCatalogView(product, true)
   };
+}
+
+export async function getPublishedLocalReleaseManifest(slug: string) {
+  assertSafeSlug(slug);
+  const catalog = await readCatalog();
+  const product = catalog.products.find((entry) => entry.slug === slug);
+  if (!product?.publishedVersion) {
+    throw new AppError(
+      "PRODUCT_TEMPLATE_NOT_FOUND",
+      "Publish this product to the local preview before publishing it online.",
+      409
+    );
+  }
+
+  const manifest = await readReleaseManifest(slug, product.publishedVersion);
+  const externalAssets = manifest.assets.filter((asset) => asset.source === "external");
+  if (externalAssets.length) {
+    throw new AppError(
+      "INVALID_TEMPLATE_ASSET",
+      "This local release still links external assets. Upload local copies before publishing online.",
+      409
+    );
+  }
+
+  return {
+    manifest,
+    template: hydrateCompactTemplate(manifest.template),
+    localVersion: product.publishedVersion,
+    release: buildReleaseSummary(manifest)
+  };
+}
+
+export async function recordOnlinePublication(
+  slug: string,
+  publication: LocalOnlinePublication
+) {
+  assertSafeSlug(slug);
+
+  return withMutationLock(async () => {
+    const catalog = await readCatalog();
+    const product = catalog.products.find((entry) => entry.slug === slug);
+    if (!product) {
+      throw new AppError(
+        "PRODUCT_TEMPLATE_NOT_FOUND",
+        "The local product could not be found after online publishing.",
+        404
+      );
+    }
+
+    product.onlinePublication = publication;
+    await writeCatalog(catalog);
+    return getLocalLibrarySnapshot(slug);
+  });
 }
 
 function collectTemplateAssetBindings(template: TemplatePublicDto): MutableAssetBinding[] {

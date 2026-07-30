@@ -47,5 +47,41 @@ describe("Local asset references", () => {
         })
       )
     ).not.toThrow();
+
+    expect(() =>
+      assertLocalStudioRequest(
+        new Request("http://localhost:3000/api/local-library", {
+          method: "POST",
+          headers: {
+            origin: "http://127.0.0.1:3000",
+            "sec-fetch-site": "same-origin"
+          }
+        })
+      )
+    ).not.toThrow();
+
+    expect(() =>
+      assertLocalStudioRequest(
+        new Request("http://localhost:3000/api/local-library", {
+          method: "POST",
+          headers: {
+            origin: "http://127.0.0.1:3001",
+            "sec-fetch-site": "same-site"
+          }
+        })
+      )
+    ).toThrow(/Cross-origin Local Studio requests are not allowed/);
+
+    expect(() =>
+      assertLocalStudioRequest(
+        new Request("http://localhost/api/local-library", {
+          method: "POST",
+          headers: {
+            origin: "http://127.0.0.1:3001",
+            "sec-fetch-site": "same-origin"
+          }
+        })
+      )
+    ).not.toThrow();
   });
 });
