@@ -132,7 +132,7 @@ footer a{color:white}
 @page{size:A4;margin:12mm}
 @media print{
  :root{--paper:white;--ink:black;--muted:#26382c}
- .mast nav,.contents,.switcher,.skip,footer,.render-message,.enlarge,#viewer{display:none}
+ .mast nav,.contents,.switcher,.skip,footer,.render-message,.enlarge,#viewer,.audit-log:not([open]){display:none}
  .inner{width:100%;padding:0}
  .reading-layout,.exhibit-body{display:block}
  .artboard{aspect-ratio:2;max-height:90mm}
