@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BND66 設計與校稿體驗 · CHILI</title>
+  <meta name="description" content="BND66 手機操作、材質預覽與客戶校稿改進計劃，附同一設計的三款輸出比較。">
+  <link rel="stylesheet" href="plan.css">
+</head>
+<body>
+  <a class="skip" href="#main">跳至內容</a>
+  <header class="mast"><div class="inner mast-inner"><a class="brand" href="../" aria-label="開啟 BND66 現行工具"><img src="../assets/chili-logo.svg" alt="CHILI"></a><span class="mast-tag">DESIGN STUDIO</span><nav aria-label="計劃目錄"><a href="#gallery">輸出比較</a><a href="#journey">操作流程</a><a href="#delivery">開發與驗收</a></nav></div></header>
+  <main id="main" class="inner">
+    <div class="hero"><div><p class="kicker">BND66 SLIM <span>/</span> 設計評審</p><h1>設計與校稿體驗<span>改進計劃</span></h1></div><div class="intro"><p>客人要看清楚，換了表面處理，支筆會有甚麼分別。設計和印刷同事則要知道，Logo 放在哪一面、實際有幾大。</p><p>首輪集中改善手機調校、材質辨識，以及客人可以直接轉發的樣稿。</p></div></div>
+    <section id="gallery" class="exhibit" aria-labelledby="gallery-heading">
+      <div class="exhibit-top"><h2 id="gallery-heading">同一款設計的三種輸出</h2><div class="switcher" role="group" aria-label="選擇輸出樣式"><button type="button" data-pick="current" aria-pressed="false">現有 PNG</button><button type="button" data-pick="client" aria-pressed="true">客戶提案圖</button><button type="button" data-pick="proof" aria-pressed="false">校稿單</button></div></div>
+      <div class="exhibit-body"><div class="artboard">
+        <canvas id="exhibit-current" role="img" aria-label="現有透明 PNG 的排法，兩支直立筆代表正面和側面。" hidden></canvas>
+        <canvas id="exhibit-client" role="img" aria-label="建議的提案圖，以整支筆和 Logo 特寫展示同一個下筆桿設計。"></canvas>
+        <canvas id="exhibit-proof" role="img" aria-label="建議的校稿版面，以側面位置和尺寸資料核對下筆桿的 Logo。" hidden></canvas>
+        <p class="render-message" id="art-status" role="status">正在載入 BND66 原圖…</p>
+      </div><aside class="caption" aria-live="polite">
+        <p class="kicker" id="exhibit-kind">建議輸出 · 客戶提案</p><h3 id="exhibit-title">全筆配色與 Logo 近鏡</h3><p id="exhibit-desc">以中性背景展示整支筆，同頁給 Logo 一個清晰的近鏡。銷售可以把單張圖片放入簡報或轉發給客戶。</p>
+        <dl><div><dt>筆身</dt><dd>青藍色 · Rubber</dd></div><div><dt>筆夾</dt><dd>Chrome · Glossy</dd></div><div><dt>印位</dt><dd>側面下筆桿 · Zone 1</dd></div><div><dt>圖稿</dt><dd>24.5 × 4.9 mm · 白色 UV</dd></div></dl>
+        <button class="enlarge" type="button" id="enlarge" aria-haspopup="dialog">放大檢視樣板 <span aria-hidden="true">↗</span></button>
+        <small>版面示意使用同一組 BND66 原素材，展示用 Logo 用作比較。</small>
+      </aside></div>
+      <noscript><p>三種輸出的用途與規格見本頁「輸出設計」。圖像切換需要 JavaScript。</p></noscript>
+    </section>
+    <div class="reading-layout"><aside class="contents" aria-label="章節連結"><p class="kicker">閱讀本計劃</p><a href="#baseline">現況與優先次序</a><a href="#journey">設計流程</a><a href="#outputs">輸出設計</a><a href="#material">材質與色彩</a><a href="#references">品牌與得獎案例</a><a href="#delivery">開發安排</a><a href="#quality">驗收與複評</a></aside><div class="reading">
+    <section id="baseline"><h2>最值得先改的地方</h2>
+      <p class="lead">讓正在調校的部分留在眼前。客人選了 Rubber 或移動了 Logo，應該即刻看得出有甚麼改變。</p>
+      <dl class="rows">
+        <div><dt>手機操作<span>首發優先</span></dt><dd>實測 390 × 844 的手機視窗，第一個表面處理選項在頁頂以下約 1,076 px，上載欄在約 1,572 px。調整 Logo 尺寸時，畫面內看見的筆身高度為 0 px。桌面 1440 × 900 則可同時看見完整的 548 px 預覽。優先修正窄屏和矮屏佈局。</dd></div>
+        <div><dt>換款與復原<span>首發優先</span></dt><dd>現版會先清除已載入的 Logo 才讀取替換檔。換成無法開啟的 AI 後，客人要重新載入舊稿。建議成功解碼後才替換，並提供「復原上一步」。</dd></div>
+        <div><dt>材質判斷<span>首發優先</span></dt><dd>現版三種筆身處理沿用同一底相，靠程式調整陰影和高光。先對照固定光源下的實物相片，再決定 Rubber、Matt 和 Glossy 各自保留多少質感。</dd></div>
+        <div><dt>轉發樣稿<span>首發優先</span></dt><dd>現版正、側面合圖為 430 × 1642 px，背面線稿為 156 × 1642 px。下載檔只含筆和 Logo，收件人要另外追問印面、尺寸與工藝。</dd></div>
+      </dl>
+    </section>
+    <section id="journey"><h2>把設計流程收斂成三步</h2>
+      <ol class="steps">
+        <li><h3>揀筆身與筆夾</h3><p>直接標示「筆身」和「筆夾」。點選部件便靠近該處，色辦旁固定顯示色名及色號。三款表面處理用同一角度的材質特寫，點「比較」即可鎖定色號和光源，並排看兩種處理。</p></li>
+        <li><h3>放 Logo 與校位置</h3><p>先點產品上的可印位置，再上載圖檔。Zone 2 和 3 自動切到側面。Zone 1 明確揀正面、側面或背面。提供拖動、置中、方向鍵微調和毫米輸入，鎖定長寬比。保留每個位置的試放記錄，送出前清楚顯示本版選用哪一個印位。</p></li>
+        <li><h3>預覽、改稿與下載</h3><p>固定顯示「預覽及匯出」。進入時保留目前角度，並列出筆身、筆夾、工藝和印位。選提案圖或校稿單，按「返回調校」便回到原有部件和縮放。無 Logo 的產品仍可匯出淨圖。</p></li>
+      </ol>
+      <div class="note"><h3>桌面與手機</h3><p>桌面用左側產品、右側操作，下方只保留選擇摘要。手機以橫向全筆和可伸縮底部面板共用畫面。展開定位時改顯局部，收起即回全筆。鍵盤開啟及橫向短屏時可收合預覽，以免遮擋輸入或焦點。</p></div>
+      <p>失敗狀態也要可操作。遇到低解像 Logo，顯示實際印刷尺寸及有效 PPI，客人可縮小或換檔。AI 未有相容 PDF 預覽時，保留上一版並提供重試或改用 PDF 的入口。自訂色號未能配對時，保留輸入並提示填寫 Hex 預覽色。</p>
+    </section>
+    <section id="outputs"><h2>按收件人設計輸出</h2>
+      <dl class="rows">
+        <div><dt>客戶提案圖<span>簡報、電郵、通訊軟件</span></dt><dd>首選 4:3 中性背景（建議 1600 × 1200 px）。橫放一支完整產品，用同一狀態裁出印字特寫。保留足夠留白、視角和版本。白筆可選灰底，深色筆可用暖白底。透明 PNG 仍提供給排版同事。大尺寸版先檢查底圖覆蓋的原生像素。</dd></div>
+        <div><dt>A4 客戶校稿 PDF<span>核對位置、尺寸、方案</span></dt><dd>頁首放型號、日期、版本與「待客戶確認」。中央放已選印面、閱讀方向、位置標示和局部放大。資料欄分開列印區上限、Logo 實際闊 × 高、工藝、筆身及筆夾色號與表面處理。附有 1:1 向量印區及 10 mm 校驗線，列印時選「實際大小」。清楚標明放大圖的比例。</dd></div>
+        <div><dt>乾淨透明 PNG<span>設計師自行排版</span></dt><dd>可揀正面、側面或正側組圖。介面提供白、灰及棋盤底檢查透明邊，下載保持透明。檔名帶型號、印面、印區和版本，例如 BND66_Side_Z1_v03.png。背面下載標記為「背面定位線稿」。</dd></div>
+      </dl>
+      <div class="note"><h3>同一個設計只計算一次</h3><p>把筆身及筆夾、工藝、印面、原 Logo 或畫板、毫米尺寸、中心點與方向存成同一個設計版本。即時畫面、PNG 和 PDF 均從該版本生成。版本號會隨設計變更，避免收件人手持兩份同名樣稿。</p></div>
+      <p>PDF 以毫米座標繪製文字、尺寸線和可保留的向量圖稿。多頁 PDF／AI 記錄所選畫板，點陣圖顯示有效 PPI。複雜圖稿若需點陣化，在校稿單註明。工廠另行審核線寬、油墨、色辦及生產原稿。</p>
+    </section>
+    <section id="material"><h2>改善換色和表面處理的失真</h2>
+      <div class="note"><h3>先用回 PSD 裏已有的 986 × 3772 px 原圖</h3><p>已核對 BND66 PSD，筆身和筆夾的智慧型物件內保留同一張正、側面原圖，線性解像度約為現版的 2.3 倍。高解像原圖本身沒有分區遮罩。以現有遮罩定位，在原圖尺寸重新勾出筆身和筆夾，優先檢查幼細金屬邊、半透明像素及高反差邊緣。</p></div>
+      <ol class="steps">
+        <li><h3>先找出失真來自哪一層</h3><p>固定同一色號和裁切，並列 Photoshop 母檔、現版預覽和目標實物相。深色檢查暗部，淺色檢查輪廓，鮮色檢查高光偏色。以白、黑、青藍各測三款筆身處理，共九組，再覆核亮面和啞面筆夾。</p></li>
+        <li><h3>用實物決定高光和紋理</h3><p>按同一角度、曝光和光源拍攝有代表性的實物，放入灰卡作參考。從 PSD 分出遮罩、底色、陰影、高光和表面紋理。Rubber 保留柔和漸變，Matt 保留邊緣轉折，Glossy 保留窄而明顯的高光，Chrome 筆夾獨立處理。每款效果由產品同事對實物簽核。</p></li>
+        <li><h3>分清模擬顏色與生產色號</h3><p>瀏覽器和分享圖統一使用 sRGB。保存客戶填寫的 Pantone 參考和獨立的螢幕近似色。實物校色在指定燈光與樣板下進行。鏡面雷射另核對反射方向及亮度分佈。補拍背面之前，只在可用的背面定位線稿上預覽。</p></li>
+      </ol>
+      <p>印區按 BND66 圖紙鎖定。下筆桿 Zone 1 為 40 × 7 mm，正、側、背擇一。上筆桿 Zone 2 為 20 × 7 mm，側面。筆帽 Zone 3 為 6 × 6 mm，側面。現版筆帽可印範圍只有約 71 × 71 px；製作近鏡時應重新從母檔取材，再獨立繪製 Logo 和尺寸線。圓柱面所見的輕微弧度只用於產品照片，1:1 校稿區保留原圖幾何。</p>
+    </section>
+    <section id="references"><h2>品牌和得獎作品的取捨</h2>
+      <div class="ref-list">
+        <article><h3>RIMOWA UNIQUE · 讓部件成為入口</h3><p>這個配置工具於 2019 年獲 Awwwards Site of the Day。RIMOWA 讓客人按手挽、輪子、行李牌等部件配置。BND66 可以用「點筆夾 → 放大筆夾 → 揀鍍層」取代來回對照 Part 2 的步驟，現有正側素材已足夠試行。</p><p class="refs"><a href="https://www.awwwards.com/sites/rimowa-unique">Awwwards 得獎紀錄 ↗</a><a href="https://www.rimowa.com/us/en/faq/services/customization---rimowa-unique">RIMOWA 部件說明 ↗</a></p></article>
+        <article><h3>Nike By You · 每次選擇都有視覺回應</h3><p>Nike 的訂製器逐部件選色和用料，結果即時顯示。BND66 選表面處理時可自動顯示同一處高光的近鏡，並保留切回全筆的入口。色相、角度和縮放在比較期間固定，客人便能判斷工藝差異。</p><p class="refs"><a href="https://www.nike.com/help/a/what-is-nike-by-you/app">Nike 官方功能說明 ↗</a></p></article>
+        <article><h3>IKEA Wallspace Planner · 在成品上直接調整</h3><p>此工具於 2019 年獲 FWA of the Day，製作團隊把拖放和手機操作放在核心。BND66 可直接拖動 Logo 或選取印區，同時保留鍵盤及毫米輸入，兼顧試放和精準校稿。</p><p class="refs"><a href="https://thefwa.com/cases/ikea-interactive-3d-wallspace-planner">FWA 案例 ↗</a><a href="https://www.demodern.de/en/blog/ikea-wallspace-planner-insights">製作團隊紀錄 ↗</a></p></article>
+        <article><h3>Pens.com · 讓客戶帶走可放大的校樣</h3><p>同業 Pens.com 提供編輯器預覽，並可下載較高解像度的 PDF 檢查細節。BND66 的校稿單進一步列出實際 Logo 尺寸、閱讀方向和選定工藝，讓只收到檔案的客人都能覆核。</p><p class="refs"><a href="https://www.pens.com/ie/customer-care/help-centre/1781602238018">Pens.com 校樣說明 ↗</a></p></article>
+      </div>
+    </section>
+    <section id="delivery"><h2>四個交付階段</h2>
+      <p class="lead">以下為 BND66 單款的執行估算，以一位前端、一位設計師及可協作的產品／印刷同事為前提。實物樣板及用戶測試檔期另計。</p>
+      <dl class="rows">
+        <div><dt>第 1 階段 · 基準<span>1–2 個工作天</span></dt><dd>設計與產品同事記錄手機、矮屏桌面和常用工作站的同一條任務，收集三類表面處理樣板及 CHILI 已確認的尺寸圖。建立九組色材基準、三個印位的參考座標和現版匯出樣本。</dd></div>
+        <div><dt>第 2 階段 · 操作<span>3–5 個工作天</span></dt><dd>前端與設計完成手機固定預覽、直接選部件、全筆／局部切換、選印面、上載復原、毫米微調。先用真實品牌 Logo 在三個印位做任務測試，記錄被卡住的步驟。</dd></div>
+        <div><dt>第 3 階段 · 輸出<span>4–6 個工作天</span></dt><dd>建立共用的設計版本，製作提案圖和一頁 A4 校稿 PDF。用同一稿交叉核對圖片、PDF、毫米尺寸和方向。印刷同事以實際大小列印，量校驗線和印區，並檢查技術文字。</dd></div>
+        <div><dt>第 4 階段 · 材質與複驗<span>3–5 個工作天起</span></dt><dd>設計師按實物相調校材質，前端核對瀏覽器及輸出一致。修正後以新受測者重驗受影響任務。依下列門檻決定複驗輪數。方案 A/B 並排、恢復本機草稿可在首發核心驗收後加入。</dd></div>
+      </dl>
+      <p>日後增加產品時沿用同一個編輯器及輸出排版，只須為新款加入視角、素材、毫米印區與可用工藝。今輪交付範圍集中在 BND66。</p>
+    </section>
+    <section id="quality"><h2>把得獎作品的要求轉成驗收方法</h2>
+      <p class="lead">每次複評都要交出畫面、可重現的操作及下載樣本。發現阻礙選擇、令 Logo 遺失或導致錯誤校稿的問題，先修正，再測同一條任務。</p>
+      <dl class="rows">
+        <div><dt>任務與理解<span>5 位首次使用者＋3 位業務／印刷同事</span></dt><dd>至少 4/5 位首次使用者能在手機 2 分鐘內選定筆身處理、上載 Logo、放到指定印面並取得提案圖，全程無提示。3/3 位審稿者只拿 PDF 就能正確讀出印面、工藝、方向和實際尺寸。另以兩款同色處理盲測材質辨識，至少 4/5 人正確。</dd></div>
+        <div><dt>輸出與位置<span>客戶獨立閱稿</span></dt><dd>三個印區測橫長、正方及透明細線 Logo，並覆核 Zone 1 三個印面。螢幕、PNG 及 PDF 的中心和尺寸用同一毫米座標換算，數碼幾何誤差目標 ≤ 0.1 mm。A4 以 100% 列印，比對 10 mm 校驗線，記錄打印機及實測誤差；生產公差由印刷部另訂。</dd></div>
+        <div><dt>操作與讀取速度<span>手機、平板、桌面</span></dt><dd>測 320、390、768、1366、1440 px 闊，補測 iOS Safari、Android Chrome 及鍵盤全流程。焦點可見、控制有名稱、還原不丟稿，主要觸控目標以 44 px 設計。換色至出畫目標 200 ms 內。實際流量足夠時按裝置分組檢查第 75 百分位 LCP ≤ 2.5 秒、INP ≤ 200 ms、CLS ≤ 0.1。</dd></div>
+        <div><dt>評審與放行<span>專案內部標準</span></dt><dd>以 Awwwards 的設計 40%、易用性 30%、創意 20%、內容 10% 計算；每項至少 8.0/10，加權至少 8.3/10。Webby 的導覽、功能、互動與整體體驗以任務證據覆核。FWA 對照項為客人能否直接在材質或印位做有用的操作。每輪記下未通過項目、負責人、修正及下一輪結果。重大和阻斷問題須清零。</dd></div>
+      </dl>
+      <p class="refs"><a href="https://www.awwwards.com/about-evaluation/">Awwwards 評審方法 ↗</a><a href="https://www.webbyawards.com/judging-criteria/#websites">Webby 評審準則 ↗</a><a href="https://thefwa.com/judging">FWA 評審 ↗</a><a href="https://web.dev/articles/vitals">Core Web Vitals ↗</a></p>
+      <div class="note"><h3>本次交付與驗收界線</h3><p>本頁是改進計劃，頂部可切換同一支筆的三款輸出版面示意。現版工具的問題已按實際畫面和程式覆核。新版操作任務、實物對色、PDF 實寸列印及獎項水準評分，要在對應功能完成後執行。</p></div>
+      <details class="audit-log"><summary>本計劃與示意頁的自評紀錄</summary><p>第一輪發現 320 px 手機的標題令畫面縮放，並發現校稿單縮圖上的資料難以閱讀。修正標題斷行，加入可用鍵盤操作的全屏樣板及原像素檢視。</p><p>第二輪在 320、390、768、1366、1440 px 檢查寬度、章節導覽與三款輸出切換。在 390 px 逐一開啟三款樣板，驗證放大、捲動、Esc 關閉和焦點返回。390 及 1440 px 的 axe WCAG 2.0／2.1 AA 自動檢查均無違規紀錄。</p><p>此頁內部自評為設計 8.4、易用性 8.5、創意 8.0、內容 8.9，加權 8.40/10。設計分依全筆與局部的主次，易用性依手機複驗，創意依同一設定三種視覺用途，內容依原檔、毫米座標及品牌資料核對。第三方評審與實際用戶測試另計。</p></details>
+    </section>
+    </div></div>
+  </main>
+  <footer><div class="inner"><span>CHILI · BND66 Slim</span><a href="../">開啟現有設計工具 ↗</a></div></footer>
+  <dialog id="viewer" aria-labelledby="viewer-title"><div class="viewer-bar"><h2 id="viewer-title">輸出樣板</h2><button type="button" id="actual" aria-pressed="false">原像素檢視</button><button type="button" id="dismiss" autofocus>關閉</button></div><div class="viewer-scroll" tabindex="0" role="region" aria-label="樣板檢視範圍，放大後可捲動"><img id="viewer-image" alt=""></div></dialog>
+  <script type="module" src="plan.js"></script>
+</body>
+</html>
