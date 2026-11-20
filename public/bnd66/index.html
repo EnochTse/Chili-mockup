@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Preview BND66 Slim colours, finishes and logo printing.">
+  <title>BND66 Custom · CHILI Design Studio</title>
+  <link rel="stylesheet" href="studio.css">
+  <script type="module" src="studio.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <img class="wordmark" src="assets/chili-logo.svg" alt="CHILI Corporate Gifts" width="115" height="55">
+      <span class="masthead-label">Design Studio</span>
+    </div>
+  </header>
+  <main class="product-shell">
+    <div class="breadcrumbs" aria-label="Current product">Design Studio <span aria-hidden="true">/</span> BND66 Custom</div>
+    <div class="product-layout">
+      <section class="studio-panel" aria-label="Product preview">
+        <div class="top-toggle" role="group" aria-label="Preview source">
+          <button type="button" data-source="live" aria-pressed="true">Your design studio</button>
+          <button type="button" data-source="photos" aria-pressed="false">Product photos</button>
+        </div>
+        <div id="live-view">
+          <div class="guide-toggle" role="group" aria-label="Preview guides">
+            <button type="button" data-guide="parts" aria-pressed="true">Colour parts</button>
+            <button type="button" data-guide="zones" aria-pressed="false">Logo zones</button>
+            <button type="button" data-guide="clean" aria-pressed="false">Clean view</button>
+          </div>
+          <div class="stage">
+            <div class="stage-art" id="stage-art">
+              <canvas id="preview" role="img" aria-label="BND66 pen shown from the front and side" width="430" height="1642"></canvas>
+              <div class="markers" id="markers"></div>
+              <div class="view-captions" id="view-captions"><span>Front</span><span>Side</span></div>
+            </div>
+          </div>
+          <div class="legends" id="legends" role="group" aria-label="Guide selection"></div>
+          <p class="guide-note" id="guide-note">Guides are for screen reference only. Downloads contain no labels or boxes.</p>
+          <div class="summary" id="summary" aria-live="polite"></div>
+          <p id="stage-size" class="stage-size" hidden></p>
+          <p class="screen-note" id="screen-note">Screen approximation only.</p>
+          <p class="warning" id="stage-error" role="alert" hidden></p>
+        </div>
+        <div id="photos-view" hidden>
+          <div class="product-photo"><img id="gallery-photo" alt="BND66 Slim product photo"></div>
+          <div class="guide-toggle gallery-toggles" role="group" aria-label="Product photos">
+            <button type="button" data-photo="product" aria-pressed="true">Product photo</button>
+            <button type="button" data-photo="printing" aria-pressed="false">Printing areas</button>
+          </div>
+        </div>
+      </section>
+      <section class="details" aria-labelledby="product-title">
+        <p class="product-intro">SLIM – Stainless Steel Ballpoint Pen</p>
+        <h1 id="product-title">BND66 CUSTOM</h1>
+        <form id="design-form">
+          <fieldset class="product-option">
+            <legend>MAIN COLOR (PART 1)</legend>
+            <div class="swatches" id="body-options"></div>
+            <div class="custom-colour" id="body-custom" hidden>
+              <input type="text" id="body-colour" aria-label="Body Pantone or hex colour" placeholder="e.g. Violet C or #0099BC" autocomplete="off" spellcheck="false" maxlength="40">
+              <span class="colour-feedback" id="body-feedback" aria-live="polite"></span>
+            </div>
+          </fieldset>
+          <fieldset class="product-option">
+            <legend>MAIN FINISHING (PART 1)</legend>
+            <div class="pills" id="finishes"></div>
+          </fieldset>
+          <fieldset class="product-option">
+            <legend>COLOR PART 2</legend>
+            <div class="swatches" id="clip-options"></div>
+            <div class="custom-colour" id="clip-custom" hidden>
+              <input type="text" id="clip-colour" aria-label="Clip Pantone or hex colour" placeholder="e.g. 485 C or #DA291C" autocomplete="off" spellcheck="false" maxlength="40">
+              <span class="colour-feedback" id="clip-feedback" aria-live="polite"></span>
+            </div>
+          </fieldset>
+          <fieldset class="product-option">
+            <legend>FINISHING PART 2</legend>
+            <div class="pills" id="clip-finishes"></div>
+          </fieldset>
+          <fieldset class="product-option printing-option">
+            <legend>LOGO ON PRODUCT</legend>
+            <div class="pills" id="methods"></div>
+          </fieldset>
+          <details id="logo-panel" open>
+            <summary>Logo preview</summary>
+            <div class="editor">
+              <div class="upload">
+                <label class="upload-label" for="artwork">Load AI / PDF / PNG / JPG logo</label>
+                <input type="file" id="artwork" accept=".ai,.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg">
+                <p class="quiet">PDF-compatible AI, PDF, PNG or JPG · up to 10 MB</p>
+                <p class="quiet status" id="artwork-status" role="status"></p>
+                <p class="warning" id="artwork-error" role="alert" hidden></p>
+              </div>
+              <label class="field" id="artboard-field" hidden>
+                <span>Artboard</span>
+                <select id="artboard"></select>
+              </label>
+              <div class="editor-actions background-actions" id="background-actions" hidden>
+                <button id="toggle-background" type="button">Remove JPG background</button>
+              </div>
+              <div class="editor-grid">
+                <label class="field"><span>Printing zone</span><select id="zone"></select></label>
+                <label class="field"><span>Front / Side / Rear</span><select id="view"></select></label>
+                <label class="field" id="ink-field"><span>Logo colour</span><select id="ink"><option value="original">Original</option><option value="#ffffff">White</option><option value="#000000">Black</option><option value="custom">Pantone / Hex</option></select></label>
+                <label class="field" id="ink-custom-field" hidden><span>Logo colour reference</span><input id="ink-custom" type="text" placeholder="e.g. 485 C or #DA291C" maxlength="40" aria-describedby="ink-feedback"><small id="ink-feedback" class="quiet" aria-live="polite"></small></label>
+                <label class="field"><span>Orientation</span><select id="orientation"><option value="-90">Bottom to top</option><option value="90">Top to bottom</option><option value="0">Left to right</option></select></label>
+                <label class="field slider field-size"><span>Logo size <output id="size-label" for="size">90%</output></span><input type="range" id="size" min="1" max="100" value="90"><small id="dimensions"></small></label>
+                <label class="field slider"><span>Higher / lower <output id="vertical-label" for="vertical">0%</output></span><input type="range" id="vertical" min="-100" max="100" value="0"></label>
+                <label class="field slider"><span>Left / right <output id="horizontal-label" for="horizontal">0%</output></span><input type="range" id="horizontal" min="-100" max="100" value="0"></label>
+              </div>
+              <div class="editor-actions">
+                <button id="centre" type="button">Center logo</button>
+                <button id="clear" type="button">Clear logo</button>
+                <button id="export" class="primary" type="button">Preview PNG</button>
+              </div>
+            </div>
+          </details>
+        </form>
+      </section>
+    </div>
+  </main>
+  <dialog id="download-dialog" aria-labelledby="download-title">
+    <div class="dialog-heading"><h2 id="download-title">Preview PNG</h2><button type="button" id="close-dialog" aria-label="Close preview">×</button></div>
+    <img id="download-image" alt="BND66 preview without guides">
+    <a class="primary" id="download-link" download="BND66-mockup.png">Download PNG</a>
+  </dialog>
+  <noscript><p class="no-script">Enable JavaScript to customise the BND66 preview.</p></noscript>
+</body>
+</html>
